@@ -1,0 +1,10 @@
+rules.json
+README.md
+PRIVACY.md
+LICENSE
+CHANGELOG.md
+build.ps1
+.gitattributes
+.web-ext-ignore
+.git
+web-ext-artifacts

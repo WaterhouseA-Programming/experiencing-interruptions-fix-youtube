@@ -1,81 +1,155 @@
-// YouTube Anti-Adblock Fix
-// Removes the "experiencing interruptions" / ad-blocker enforcement popup that
-// YouTube shows when it detects uBlock Origin, then un-pauses the video.
+// Experiencing Interruptions Fix for YouTube — content script.
 //
-// uBO still does the actual ad blocking. This script only neutralises the nag
-// screen and the playback lock that comes with it.
+// Removes YouTube's ad-blocker enforcement popup ("You're using an ad blocker"
+// / "experiencing interruptions"), unlocks the page, and resumes the paused
+// video. uBlock Origin still does the actual ad blocking; this only clears the
+// nag screen and the playback lock.
+//
+// Selectors come from two places, merged together:
+//   - BUILT_IN_* below  (always available, even offline)
+//   - remote rules cached in storage by background.js (so the fix can be
+//     updated when YouTube changes its markup, without a new release)
 
 (function () {
   'use strict';
 
-  // ---- config -------------------------------------------------------------
+  const api = typeof browser !== 'undefined' ? browser : chrome;
 
-  // Elements that make up the enforcement / "interruptions" popup.
-  const POPUP_SELECTORS = [
+  // ---- built-in defaults --------------------------------------------------
+
+  const BUILT_IN_POPUP = [
     'ytd-enforcement-message-view-model',
     'ytd-enforcement-message-view-model.style-scope',
-    'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
     'ytd-popup-container tp-yt-paper-dialog',
   ];
 
-  // The dark backdrop rendered behind the popup.
-  const BACKDROP_SELECTORS = [
+  const BUILT_IN_BACKDROP = [
     'tp-yt-iron-overlay-backdrop',
     'tp-yt-iron-overlay-backdrop.opened',
   ];
 
+  // ---- live settings ------------------------------------------------------
+
+  let enabled = true;
+  let popupSelectors = BUILT_IN_POPUP.slice();
+  let backdropSelectors = BUILT_IN_BACKDROP.slice();
+
+  function applySettings(s) {
+    if (!s) return;
+    if (typeof s.enabled === 'boolean') enabled = s.enabled;
+    popupSelectors = dedupe(
+      BUILT_IN_POPUP.concat(safeArray(s.remotePopupSelectors))
+    );
+    backdropSelectors = dedupe(
+      BUILT_IN_BACKDROP.concat(safeArray(s.remoteBackdropSelectors))
+    );
+  }
+
+  function safeArray(a) {
+    return Array.isArray(a) ? a.filter((x) => typeof x === 'string') : [];
+  }
+  function dedupe(a) {
+    return Array.from(new Set(a));
+  }
+
+  // Load current settings, then react to any later changes.
+  api.storage.local
+    .get(['enabled', 'remotePopupSelectors', 'remoteBackdropSelectors'])
+    .then(applySettings)
+    .catch(() => {});
+
+  api.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    const patch = {};
+    for (const k of ['enabled', 'remotePopupSelectors', 'remoteBackdropSelectors']) {
+      if (changes[k]) patch[k] = changes[k].newValue;
+    }
+    // Merge onto current picture.
+    applySettings({
+      enabled: patch.enabled !== undefined ? patch.enabled : enabled,
+      remotePopupSelectors:
+        patch.remotePopupSelectors !== undefined
+          ? patch.remotePopupSelectors
+          : dropBuiltIn(popupSelectors, BUILT_IN_POPUP),
+      remoteBackdropSelectors:
+        patch.remoteBackdropSelectors !== undefined
+          ? patch.remoteBackdropSelectors
+          : dropBuiltIn(backdropSelectors, BUILT_IN_BACKDROP),
+    });
+  });
+
+  function dropBuiltIn(list, builtIn) {
+    return list.filter((x) => !builtIn.includes(x));
+  }
+
   // ---- popup removal ------------------------------------------------------
 
   function removeEnforcementPopups() {
+    if (!enabled) return false;
     let removedSomething = false;
 
-    document
-      .querySelectorAll('ytd-enforcement-message-view-model')
-      .forEach((el) => {
-        // Climb to the owning dialog so we take the whole thing out.
-        const dialog =
-          el.closest('tp-yt-paper-dialog') ||
-          el.closest('ytd-popup-container') ||
-          el;
-        dialog.remove();
-        removedSomething = true;
-      });
+    // Take out the enforcement message and whatever dialog owns it.
+    querySafe('ytd-enforcement-message-view-model').forEach((el) => {
+      const dialog =
+        el.closest('tp-yt-paper-dialog') ||
+        el.closest('ytd-popup-container') ||
+        el;
+      dialog.remove();
+      removedSomething = true;
+    });
 
-    BACKDROP_SELECTORS.forEach((sel) => {
-      document.querySelectorAll(sel).forEach((el) => {
+    // Any other configured popup containers.
+    popupSelectors.forEach((sel) => {
+      querySafe(sel).forEach((el) => {
+        // A paper-dialog that contains the enforcement message, or an explicit
+        // remote rule. We only remove dialogs, never the whole page.
+        if (
+          el.querySelector &&
+          (el.matches('ytd-enforcement-message-view-model') ||
+            el.querySelector('ytd-enforcement-message-view-model') ||
+            sel !== 'ytd-popup-container tp-yt-paper-dialog')
+        ) {
+          el.remove();
+          removedSomething = true;
+        }
+      });
+    });
+
+    // Remove the dark backdrop.
+    backdropSelectors.forEach((sel) => {
+      querySafe(sel).forEach((el) => {
         el.remove();
         removedSomething = true;
       });
     });
 
-    // YouTube locks page scroll and dims the page while the popup is up.
     if (removedSomething) {
       unlockPage();
       resumePlayback();
     }
-
     return removedSomething;
   }
 
+  // querySelectorAll that never throws on a bad remote selector.
+  function querySafe(sel) {
+    try {
+      return Array.from(document.querySelectorAll(sel));
+    } catch (_e) {
+      return [];
+    }
+  }
+
   function unlockPage() {
-    const html = document.documentElement;
-    const body = document.body;
-    [html, body].forEach((node) => {
+    [document.documentElement, document.body].forEach((node) => {
       if (!node) return;
-      node.style.removeProperty('overflow');
       node.removeAttribute('scroll-locked');
       node.style.setProperty('overflow', 'auto', 'important');
     });
   }
 
-  // ---- playback recovery --------------------------------------------------
-
   function resumePlayback() {
     const video = document.querySelector('video.html5-main-video, video');
-    if (!video) return;
-
-    // The popup pauses the player; nudge it back to life.
-    if (video.paused) {
+    if (video && video.paused) {
       const p = video.play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
     }
@@ -83,16 +157,12 @@
 
   // ---- observer -----------------------------------------------------------
 
-  // Run once immediately in case the popup is already in the DOM.
   const kick = () => removeEnforcementPopups();
 
-  const observer = new MutationObserver(() => {
-    kick();
-  });
+  const observer = new MutationObserver(kick);
 
   function startObserving() {
     if (!document.documentElement) {
-      // document_start can fire before <html> exists.
       requestAnimationFrame(startObserving);
       return;
     }
@@ -105,11 +175,8 @@
 
   startObserving();
 
-  // Safety net: some builds re-inject the popup on a timer, so sweep
-  // periodically as well. Cheap querySelector, no visible cost.
+  // Backstops: periodic sweep + SPA navigation events.
   setInterval(kick, 1000);
-
-  // Re-check on YouTube's SPA navigations.
   window.addEventListener('yt-navigate-finish', kick, true);
   document.addEventListener('yt-navigate-finish', kick, true);
 })();

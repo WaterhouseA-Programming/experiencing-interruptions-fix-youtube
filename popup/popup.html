@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Experiencing Interruptions Fix</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        width: 240px;
+        margin: 0;
+        padding: 14px;
+        font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      h1 { font-size: 14px; margin: 0 0 2px; }
+      .sub { color: #888; font-size: 11px; margin: 0 0 12px; }
+      .row {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 8px 0; border-top: 1px solid rgba(128,128,128,.25);
+      }
+      button {
+        width: 100%; margin-top: 12px; border: 0; border-radius: 8px;
+        padding: 9px; font: inherit; font-weight: 600; cursor: pointer;
+      }
+      .coffee { background: #ffdd00; color: #0f0f0f; }
+      .ghost {
+        background: transparent; margin-top: 6px;
+        border: 1px solid rgba(128,128,128,.35); color: inherit;
+      }
+      .switch { position: relative; width: 40px; height: 24px; }
+      .switch input { opacity: 0; width: 0; height: 0; }
+      .slider {
+        position: absolute; inset: 0; background: #bbb;
+        border-radius: 24px; transition: .2s; cursor: pointer;
+      }
+      .slider::before {
+        content: ""; position: absolute; height: 18px; width: 18px;
+        left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s;
+      }
+      input:checked + .slider { background: #ff0033; }
+      input:checked + .slider::before { transform: translateX(16px); }
+    </style>
+  </head>
+  <body>
+    <h1>Experiencing Interruptions Fix</h1>
+    <p class="sub">for YouTube</p>
+
+    <div class="row">
+      <span>Fix enabled</span>
+      <label class="switch">
+        <input type="checkbox" id="enabled" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <button id="donate" class="coffee">☕ Buy me a coffee</button>
+    <button id="options" class="ghost">Settings</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

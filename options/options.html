@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Experiencing Interruptions Fix — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="card">
+      <header class="head">
+        <img src="../icons/icon.svg" alt="" width="40" height="40" />
+        <div>
+          <h1>Experiencing Interruptions Fix</h1>
+          <p class="sub">for YouTube &middot; companion to uBlock Origin</p>
+        </div>
+      </header>
+
+      <section class="row">
+        <div class="label">
+          <strong>Enable the fix</strong>
+          <span>Remove the ad-blocker popup and resume playback.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="enabled" />
+          <span class="slider"></span>
+        </label>
+      </section>
+
+      <section class="row">
+        <div class="label">
+          <strong>Auto-update fix rules</strong>
+          <span
+            >Keep working when YouTube changes its popup. Downloads a small list
+            of selectors (data only, never code).</span
+          >
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="autoUpdate" />
+          <span class="slider"></span>
+        </label>
+      </section>
+
+      <section class="block">
+        <label for="rulesUrl"><strong>Rules URL</strong></label>
+        <input type="url" id="rulesUrl" spellcheck="false" />
+        <div class="update-line">
+          <button id="updateNow" class="btn ghost">Update rules now</button>
+          <span id="status" class="status"></span>
+        </div>
+      </section>
+
+      <section class="donate">
+        <p>Free and made by one person. If it saved your evening, thank you:</p>
+        <button id="donate" class="btn coffee">☕ Buy me a coffee</button>
+      </section>
+
+      <footer class="foot">
+        <span id="version"></span>
+      </footer>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>

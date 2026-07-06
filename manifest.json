@@ -1,11 +1,22 @@
 {
   "manifest_version": 2,
-  "name": "YouTube Anti-Adblock Fix",
-  "version": "1.0.0",
-  "description": "Removes YouTube's 'experiencing interruptions' / ad-blocker enforcement popups and resumes playback. Companion to uBlock Origin. Personal use.",
+  "name": "Experiencing Interruptions Fix for YouTube",
+  "version": "1.1.0",
+  "author": "NimblePanda",
+  "homepage_url": "https://buymeacoffee.com/nimblepanda",
+  "description": "Removes YouTube's 'experiencing interruptions' / ad-blocker enforcement popup and resumes playback. A companion to uBlock Origin. Rules auto-update so it keeps working when YouTube changes things.",
   "icons": {
-    "48": "icon.svg",
-    "96": "icon.svg"
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
   },
   "content_scripts": [
     {
@@ -18,9 +29,21 @@
       "all_frames": true
     }
   ],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": false
+  },
+  "browser_action": {
+    "default_title": "Experiencing Interruptions Fix",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "icons/icon.svg",
+      "96": "icons/icon.svg"
+    }
+  },
   "browser_specific_settings": {
     "gecko": {
-      "id": "yt-adblock-fix@andrewwaterhouse.com",
+      "id": "experiencing-interruptions-fix@nimblepanda",
       "strict_min_version": "115.0"
     }
   }
