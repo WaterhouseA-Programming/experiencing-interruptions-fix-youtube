@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- Declared data collection as "none" in the manifest
+  (`data_collection_permissions`), now required by addons.mozilla.org. The
+  add-on collects no user data. No functional change from 1.1.0.
+
 ## 1.1.0
 
 - Renamed to "Experiencing Interruptions Fix for YouTube".

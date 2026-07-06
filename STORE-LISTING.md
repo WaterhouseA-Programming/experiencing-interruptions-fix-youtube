@@ -45,13 +45,41 @@ playback, popup.
 
 Paste the contents of PRIVACY.md.
 
-## Review notes (for the AMO reviewer)
+## Version notes (paste into the "Release notes" field)
 
-The background script fetches a JSON file (default: raw.githubusercontent.com)
-containing CSS selector strings. These are only passed to querySelectorAll in
-content.js. No remote code is fetched or evaluated, and nothing is inserted as
-HTML. Auto-update can be turned off by the user, after which no network requests
-are made.
+Use these for the 1.1.1 upload:
+
+> 1.1.1 - Added the data collection declaration now required by AMO (this add-on
+> collects no user data). No functional change from 1.1.0.
+>
+> The add-on removes YouTube's ad-blocker enforcement popup ("You're using an ad
+> blocker" / "experiencing interruptions") and resumes the paused video, so
+> playback keeps working alongside uBlock Origin. Settings are in the toolbar
+> popup and in about:addons.
+
+## Notes to Reviewer (paste into the "Notes to reviewer" field)
+
+> No account or login is required to test this add-on.
+>
+> How to test:
+> 1. Install uBlock Origin (this add-on is a companion to it; without an ad
+>    blocker YouTube will not show the popup this add-on targets).
+> 2. Open any video on https://www.youtube.com (desktop site).
+> 3. If YouTube shows the ad-blocker / "experiencing interruptions" popup, this
+>    add-on removes it and the dark overlay, unlocks the page, and resumes the
+>    paused video. With no popup present it does nothing visible.
+> 4. Settings: click the toolbar icon, or about:addons > this add-on >
+>    Preferences. There is an on/off toggle and a manual "Update rules now".
+>
+> Network / data: when "Auto-update fix rules" is on (default), the background
+> script does a plain GET of a JSON file (default host: raw.githubusercontent.com)
+> containing a list of CSS selector strings. Those strings are only passed to
+> querySelectorAll in content.js; no remote code is fetched or evaluated and
+> nothing is inserted as HTML. No user data is sent. Auto-update can be turned
+> off in settings, after which the add-on makes no network requests at all.
+>
+> Scope: built for desktop YouTube (youtube.com). It does not target the mobile
+> site (m.youtube.com), which uses different markup.
 
 ## Screenshots to capture (from the real add-on in Firefox)
 

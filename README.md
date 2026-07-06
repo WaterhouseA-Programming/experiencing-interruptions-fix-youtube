@@ -44,9 +44,13 @@ extension installable permanently on normal Firefox.
 
 1. Create a free developer account at https://addons.mozilla.org/developers/
 2. Build the package: `powershell -ExecutionPolicy Bypass -File .\build.ps1`
-   (produces `experiencing-interruptions-fix-<version>.xpi`).
+   (writes one artifact to
+   `web-ext-artifacts/experiencing-interruptions-fix-<version>.xpi`, named for
+   the manifest version and cleaned on each build).
    - Or use Mozilla's tool: `npm i -g web-ext` then `web-ext lint` and
-     `web-ext build` (respects `.web-ext-ignore`).
+     `web-ext build` (respects `.web-ext-ignore`; same output folder).
+   - For a new release, bump `"version"` in `manifest.json` first — AMO requires
+     every upload to have a higher version than the previous one.
 3. Submit the `.xpi` on AMO as a **listed** add-on (public in the store) or
    **unlisted** (self-distributed; Mozilla still signs it).
 4. AMO reviews it, signs it, and it becomes installable by anyone.
@@ -83,8 +87,18 @@ want to host it somewhere else.
 Selectors are merged on top of the built-in defaults in `content.js`, so the
 extension still works if the fetch fails or auto-update is off.
 
+## Compatibility
+
+- **Firefox desktop:** yes. Built and tested for it (MV2 + `browser.*` APIs,
+  `strict_min_version` 115).
+- **Firefox for Android:** not supported yet. It may install, but the fix
+  targets the **desktop** YouTube DOM (`ytd-*` Polymer elements). The Android
+  browser loads the mobile site (`m.youtube.com`, `ytm-*` elements), which these
+  selectors do not match, so the add-on would do nothing there. Supporting
+  Android means adding mobile selectors and testing on the mobile layout; say
+  the word and I'll do it as a follow-up.
+
 ## Notes
 
 - Keep uBlock Origin and its filter lists updated — that is still the primary
   defense. This is the backstop for when the popup slips through.
-- Firefox only for now (uses MV2 + `browser.*` APIs).
