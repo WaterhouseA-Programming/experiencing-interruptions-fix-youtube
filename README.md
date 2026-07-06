@@ -61,7 +61,7 @@ fetches remote rules, disclose that in the review notes (it is data, not code).
 when auto-update is on. Default URL:
 
 ```
-https://raw.githubusercontent.com/nimblepanda/experiencing-interruptions-fix-youtube/main/rules.json
+https://raw.githubusercontent.com/WaterhouseA-Programming/experiencing-interruptions-fix-youtube/main/rules.json
 ```
 
 To use it: create that GitHub repo (public), drop [rules.json](rules.json) at the

@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 # Files/folders that ship inside the extension (docs/rules/build excluded).
-$include = @('manifest.json', 'background.js', 'content.js', 'icons', 'options', 'popup')
+$include = @('manifest.json', 'background.js', 'content.js', 'icons', 'options', 'popup', 'welcome')
 
 $manifest = Get-Content .\manifest.json -Raw | ConvertFrom-Json
 $out = "experiencing-interruptions-fix-$($manifest.version).xpi"

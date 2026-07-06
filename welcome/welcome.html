@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Thanks for installing!</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: #f2f2f2;
+        background: radial-gradient(1200px 600px at 50% -10%, #2a2a33 0%, #131316 55%, #0d0d0f 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+      }
+      .card {
+        width: 100%;
+        max-width: 560px;
+        text-align: center;
+      }
+      .logo {
+        width: 88px; height: 88px;
+        margin: 0 auto 22px;
+        filter: drop-shadow(0 8px 24px rgba(0,0,0,.5));
+      }
+      h1 { font-size: 30px; margin: 0 0 10px; letter-spacing: -0.02em; }
+      .lead { font-size: 17px; color: #c9c9d1; margin: 0 auto 26px; max-width: 460px; }
+      .lead strong { color: #fff; }
+      .panel {
+        background: rgba(255,255,255,.04);
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 22px;
+      }
+      .panel p { margin: 0 0 18px; color: #c9c9d1; }
+      .coffee {
+        display: inline-block;
+        background: #ffdd00;
+        color: #0f0f0f;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 17px;
+        padding: 13px 26px;
+        border-radius: 10px;
+        transition: transform .1s ease;
+      }
+      .coffee:hover { transform: translateY(-1px); }
+      .hint {
+        font-size: 14px;
+        color: #9a9aa3;
+        margin: 22px auto 0;
+        max-width: 440px;
+      }
+      .hint .pin { color: #fff; font-weight: 600; }
+      .links { margin-top: 26px; font-size: 15px; }
+      .links a { color: #7ab8ff; text-decoration: none; }
+      .links a:hover { text-decoration: underline; }
+      .dot { color: #55555f; margin: 0 10px; }
+      footer { margin-top: 30px; font-size: 13px; color: #6a6a72; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <img class="logo" src="../icons/icon.svg" alt="" />
+      <h1>Thanks for installing! 🎉</h1>
+      <p class="lead">
+        <strong>Experiencing Interruptions Fix for YouTube</strong> is now running.
+        YouTube's ad-blocker popups get cleared and your videos keep playing,
+        alongside uBlock Origin.
+      </p>
+
+      <div class="panel">
+        <p>This is a free project made by one person. If it saved your evening,
+          a coffee keeps it maintained. Thank you 🙏</p>
+        <a class="coffee" href="https://buymeacoffee.com/nimblepanda" target="_blank" rel="noopener">
+          ☕ Support the project
+        </a>
+      </div>
+
+      <p class="hint">
+        <span class="pin">Settings live in the extension.</span>
+        Click the toolbar icon (or open the add-on's options in
+        <code>about:addons</code>) to toggle the fix or update rules.
+      </p>
+
+      <p class="links">
+        Questions? Head to
+        <a href="https://nimblepanda.co.uk" target="_blank" rel="noopener">nimblepanda.co.uk</a>
+      </p>
+
+      <footer>You can close this tab whenever you like.</footer>
+    </main>
+  </body>
+</html>

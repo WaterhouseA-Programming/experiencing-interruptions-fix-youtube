@@ -12,11 +12,9 @@
 
 const api = typeof browser !== 'undefined' ? browser : chrome;
 
-const DONATE_URL = 'https://buymeacoffee.com/nimblepanda';
-
 // Where updated rules are fetched from. Users can change this in Options.
 const DEFAULT_RULES_URL =
-  'https://raw.githubusercontent.com/nimblepanda/experiencing-interruptions-fix-youtube/main/rules.json';
+  'https://raw.githubusercontent.com/WaterhouseA-Programming/experiencing-interruptions-fix-youtube/main/rules.json';
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -42,7 +40,8 @@ api.runtime.onInstalled.addListener(async (details) => {
   await api.storage.local.set(merged);
 
   if (details.reason === 'install') {
-    api.tabs.create({ url: DONATE_URL });
+    // Open a friendly welcome page (not the payment link directly).
+    api.tabs.create({ url: api.runtime.getURL('welcome/welcome.html') });
   }
 
   scheduleUpdates();

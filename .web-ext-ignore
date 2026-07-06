@@ -3,8 +3,11 @@ README.md
 PRIVACY.md
 LICENSE
 CHANGELOG.md
+STORE-LISTING.md
 build.ps1
+generate-icons.ps1
 .gitattributes
+.gitignore
 .web-ext-ignore
 .git
 web-ext-artifacts

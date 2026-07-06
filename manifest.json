@@ -6,8 +6,9 @@
   "homepage_url": "https://buymeacoffee.com/nimblepanda",
   "description": "Removes YouTube's 'experiencing interruptions' / ad-blocker enforcement popup and resumes playback. A companion to uBlock Origin. Rules auto-update so it keeps working when YouTube changes things.",
   "icons": {
-    "48": "icons/icon.svg",
-    "96": "icons/icon.svg"
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
   },
   "permissions": [
     "storage",
@@ -37,8 +38,8 @@
     "default_title": "Experiencing Interruptions Fix",
     "default_popup": "popup/popup.html",
     "default_icon": {
-      "48": "icons/icon.svg",
-      "96": "icons/icon.svg"
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
     }
   },
   "browser_specific_settings": {
