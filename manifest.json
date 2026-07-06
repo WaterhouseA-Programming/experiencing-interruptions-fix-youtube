@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "YouTube Anti-Adblock Fix",
+  "version": "1.0.0",
+  "description": "Removes YouTube's 'experiencing interruptions' / ad-blocker enforcement popups and resumes playback. Companion to uBlock Origin. Personal use.",
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.youtube-nocookie.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "yt-adblock-fix@andrewwaterhouse.com",
+      "strict_min_version": "115.0"
+    }
+  }
+}
