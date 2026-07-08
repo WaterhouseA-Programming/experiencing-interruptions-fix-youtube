@@ -125,7 +125,7 @@
 
     if (removedSomething) {
       unlockPage();
-      resumePlayback();
+      guardAgainstPause();
     }
     return removedSomething;
   }
@@ -148,12 +148,45 @@
   }
 
   function resumePlayback() {
+    // Prefer the player API: it restores YouTube's own state, not just the
+    // <video> element. The player's methods live in the page compartment, so
+    // reach them through wrappedJSObject (Firefox Xray).
+    const player = document.getElementById('movie_player');
+    if (player) {
+      try {
+        const p = player.wrappedJSObject || player;
+        if (typeof p.playVideo === 'function') {
+          p.playVideo();
+          return;
+        }
+      } catch (_e) {}
+    }
     const video = document.querySelector('video.html5-main-video, video');
     if (video && video.paused) {
       const p = video.play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
     }
   }
+
+  // YouTube pauses the video shortly AFTER showing the popup, so a single
+  // play() right at removal loses the race. For a short window, retry and
+  // counter any pause YouTube forces.
+  let pauseGuardUntil = 0;
+
+  function guardAgainstPause() {
+    pauseGuardUntil = Date.now() + 2000;
+    [0, 250, 750, 1500].forEach((ms) => setTimeout(resumePlayback, ms));
+  }
+
+  // Media 'pause' doesn't bubble but still capture-phases through document.
+  document.addEventListener(
+    'pause',
+    (e) => {
+      if (!enabled || Date.now() > pauseGuardUntil) return;
+      if (e.target && e.target.tagName === 'VIDEO') resumePlayback();
+    },
+    true
+  );
 
   // ---- observer -----------------------------------------------------------
 

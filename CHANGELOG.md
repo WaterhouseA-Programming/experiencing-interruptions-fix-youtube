@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.0
+
+- Added a prevention layer (`page-hooks.js`) that works the way Brave and
+  uBlock Origin scriptlets do, instead of only cleaning up after the popup:
+  - Prunes `adPlacements` / `adSlots` / `playerAds` and enforcement-popup
+    actions out of YouTube's JSON responses (hooks on the page's `JSON.parse`
+    and `Response.prototype.json`) before YouTube's own code sees them, so the
+    popup never fires and playback is never paused.
+  - Pins `yt.config_.openPopupConfig.supportedPopups.adBlockMessageViewModel`
+    to `false` so the enforcement dialog is not allowed to open.
+  - Uses Firefox's `wrappedJSObject` / `exportFunction` (Xray) so hooks are in
+    place at `document_start`, before any YouTube script runs. Every hook is
+    fail-safe: on any error, behavior falls back to 1.1.x DOM cleanup.
+- Fixed the resume race: YouTube pauses the video shortly *after* showing the
+  popup, so the old single `video.play()` often lost. Resuming now uses the
+  player API (`movie_player.playVideo()`), retries over 1.5 s, and counters
+  any forced pause within a 2 s guard window.
+- Remote `rules.json` gains `jsonPopupKeys` (data-only JSON key names,
+  validated) so new enforcement renderer names can be pushed without a
+  release.
+
 ## 1.1.1
 
 - Declared data collection as "none" in the manifest

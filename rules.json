@@ -1,12 +1,17 @@
 {
-  "version": 1,
-  "updatedAt": "2026-07-06",
-  "_comment": "Host this file at the Rules URL (default: the raw.githubusercontent.com path in background.js). Bump 'version' and add selectors here to push a fix to every installed copy without releasing a new extension. These strings are only ever passed to querySelectorAll — never executed as code.",
+  "version": 2,
+  "updatedAt": "2026-07-08",
+  "_comment": "Host this file at the Rules URL (default: the raw.githubusercontent.com path in background.js). Bump 'version' and add entries here to push a fix to every installed copy without releasing a new extension. popupSelectors/backdropSelectors are CSS selectors passed only to querySelectorAll; jsonPopupKeys are JSON key names compared against object keys in page-hooks.js. Nothing here is ever executed as code.",
   "popupSelectors": [
     "ytd-enforcement-message-view-model",
     "ytd-popup-container tp-yt-paper-dialog"
   ],
   "backdropSelectors": [
     "tp-yt-iron-overlay-backdrop"
+  ],
+  "jsonPopupKeys": [
+    "adBlockMessageViewModel",
+    "enforcementMessageViewModel",
+    "fancyDismissibleDialogRenderer"
   ]
 }

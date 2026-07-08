@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS = {
   // Cached remote rules (empty until first successful fetch).
   remotePopupSelectors: [],
   remoteBackdropSelectors: [],
+  remoteJsonPopupKeys: [],
   remoteRulesVersion: 0,
   lastUpdated: null,
   lastUpdateError: null,
@@ -92,11 +93,13 @@ async function updateRules() {
 
     const popup = sanitizeSelectorList(data.popupSelectors);
     const backdrop = sanitizeSelectorList(data.backdropSelectors);
+    const jsonKeys = sanitizeKeyList(data.jsonPopupKeys);
     const version = Number(data.version) || 0;
 
     await api.storage.local.set({
       remotePopupSelectors: popup,
       remoteBackdropSelectors: backdrop,
+      remoteJsonPopupKeys: jsonKeys,
       remoteRulesVersion: version,
       lastUpdated: new Date().toISOString(),
       lastUpdateError: null,
@@ -107,6 +110,15 @@ async function updateRules() {
     await api.storage.local.set({ lastUpdateError: String(err) });
     throw err;
   }
+}
+
+// JSON key names used by page-hooks.js to recognise enforcement popup
+// payloads. Key names only — compared against object keys, never executed.
+function sanitizeKeyList(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((s) => typeof s === 'string' && /^[\w-]{1,100}$/.test(s))
+    .slice(0, 50);
 }
 
 // Only accept short, plausible CSS selector strings. This is defensive: it
