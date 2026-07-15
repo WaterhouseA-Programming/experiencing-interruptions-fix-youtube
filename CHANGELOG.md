@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.3.0
+
+- Handle YouTube's new toast-style enforcement. The nag moved out of the old
+  modal (`ytd-enforcement-message-view-model` in a `tp-yt-paper-dialog`) and is
+  now a generic `yt-notification-action-renderer` toast ("Experiencing
+  interruptions?") with no distinguishing attribute, so none of the old
+  selectors matched it.
+  - `content.js` now recognises the toast by its visible text and removes only
+    matching notifications, leaving ordinary YouTube toasts ("Added to queue",
+    etc.) alone, then resumes playback.
+  - Remote `rules.json` gains a data-only `popupText` field (validated
+    substrings, lowercased and compared with `String.includes`, never executed)
+    so new nag wording can be pushed without a release.
+  - `rules.json` v3 also lists the bare `yt-notification-action-renderer`
+    selector so installed 1.2.x copies (which have no text matching) clear the
+    nag via their existing remote-selector path.
+- Note: this removes the enforcement toast and resumes playback. It does not
+  change YouTube's server-side SABR stream throttling, which is uBlock Origin /
+  filter-list territory.
+
+## 1.2.1
+
+- No functional change. Version bump only — 1.2.0 was already uploaded to AMO
+  (listed channel), so unlisted self-signing required a new version number.
+
 ## 1.2.0
 
 - Added a prevention layer (`page-hooks.js`) that works the way Brave and

@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   remotePopupSelectors: [],
   remoteBackdropSelectors: [],
   remoteJsonPopupKeys: [],
+  remotePopupText: [],
   remoteRulesVersion: 0,
   lastUpdated: null,
   lastUpdateError: null,
@@ -94,12 +95,14 @@ async function updateRules() {
     const popup = sanitizeSelectorList(data.popupSelectors);
     const backdrop = sanitizeSelectorList(data.backdropSelectors);
     const jsonKeys = sanitizeKeyList(data.jsonPopupKeys);
+    const text = sanitizeTextList(data.popupText);
     const version = Number(data.version) || 0;
 
     await api.storage.local.set({
       remotePopupSelectors: popup,
       remoteBackdropSelectors: backdrop,
       remoteJsonPopupKeys: jsonKeys,
+      remotePopupText: text,
       remoteRulesVersion: version,
       lastUpdated: new Date().toISOString(),
       lastUpdateError: null,
@@ -110,6 +113,18 @@ async function updateRules() {
     await api.storage.local.set({ lastUpdateError: String(err) });
     throw err;
   }
+}
+
+// Substrings used by content.js to recognise the toast-style enforcement nag
+// by its visible text. Data only — lowercased and compared with
+// String.includes; never executed and never inserted as HTML.
+function sanitizeTextList(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((s) => typeof s === 'string')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.length < 200)
+    .slice(0, 50);
 }
 
 // JSON key names used by page-hooks.js to recognise enforcement popup

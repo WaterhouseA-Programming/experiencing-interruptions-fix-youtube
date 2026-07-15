@@ -28,11 +28,24 @@
     'tp-yt-iron-overlay-backdrop.opened',
   ];
 
+  // Text shown by the newer toast-style enforcement ("Experiencing
+  // interruptions?"). YouTube now renders the nag as a generic
+  // yt-notification-action-renderer with no distinguishing attribute, so it is
+  // recognised by its visible text instead of a tag/class. Matched
+  // case-insensitively as a substring of the element's textContent.
+  const BUILT_IN_TEXT = [
+    'experiencing interruptions',
+    'ad blockers are not allowed',
+    'using an ad blocker',
+    'allow ads',
+  ];
+
   // ---- live settings ------------------------------------------------------
 
   let enabled = true;
   let popupSelectors = BUILT_IN_POPUP.slice();
   let backdropSelectors = BUILT_IN_BACKDROP.slice();
+  let textPhrases = BUILT_IN_TEXT.slice();
 
   function applySettings(s) {
     if (!s) return;
@@ -42,6 +55,11 @@
     );
     backdropSelectors = dedupe(
       BUILT_IN_BACKDROP.concat(safeArray(s.remoteBackdropSelectors))
+    );
+    textPhrases = dedupe(
+      BUILT_IN_TEXT.concat(
+        safeArray(s.remotePopupText).map((t) => t.toLowerCase())
+      )
     );
   }
 
@@ -54,14 +72,24 @@
 
   // Load current settings, then react to any later changes.
   api.storage.local
-    .get(['enabled', 'remotePopupSelectors', 'remoteBackdropSelectors'])
+    .get([
+      'enabled',
+      'remotePopupSelectors',
+      'remoteBackdropSelectors',
+      'remotePopupText',
+    ])
     .then(applySettings)
     .catch(() => {});
 
   api.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     const patch = {};
-    for (const k of ['enabled', 'remotePopupSelectors', 'remoteBackdropSelectors']) {
+    for (const k of [
+      'enabled',
+      'remotePopupSelectors',
+      'remoteBackdropSelectors',
+      'remotePopupText',
+    ]) {
       if (changes[k]) patch[k] = changes[k].newValue;
     }
     // Merge onto current picture.
@@ -75,6 +103,10 @@
         patch.remoteBackdropSelectors !== undefined
           ? patch.remoteBackdropSelectors
           : dropBuiltIn(backdropSelectors, BUILT_IN_BACKDROP),
+      remotePopupText:
+        patch.remotePopupText !== undefined
+          ? patch.remotePopupText
+          : dropBuiltIn(textPhrases, BUILT_IN_TEXT),
     });
   });
 
@@ -101,6 +133,10 @@
     // Any other configured popup containers.
     popupSelectors.forEach((sel) => {
       querySafe(sel).forEach((el) => {
+        // Never blanket-remove a generic notification toast: only if it carries
+        // the enforcement text. (A remote rule may list the bare renderer so
+        // older versions without text matching still clear the nag.)
+        if (isNotificationRenderer(el) && !hasEnforcementText(el)) return;
         // A paper-dialog that contains the enforcement message, or an explicit
         // remote rule. We only remove dialogs, never the whole page.
         if (
@@ -115,6 +151,11 @@
       });
     });
 
+    // Toast-style nag: a generic notification renderer with no distinguishing
+    // attribute, recognised by its visible text. Remove only matches so
+    // ordinary YouTube toasts ("Added to queue", etc.) are left alone.
+    if (removeToastNags()) removedSomething = true;
+
     // Remove the dark backdrop.
     backdropSelectors.forEach((sel) => {
       querySafe(sel).forEach((el) => {
@@ -128,6 +169,27 @@
       guardAgainstPause();
     }
     return removedSomething;
+  }
+
+  function isNotificationRenderer(el) {
+    return !!(el && el.matches && el.matches('yt-notification-action-renderer'));
+  }
+
+  function hasEnforcementText(el) {
+    const t = ((el && el.textContent) || '').toLowerCase();
+    if (!t) return false;
+    return textPhrases.some((p) => p && t.includes(p));
+  }
+
+  function removeToastNags() {
+    let removed = false;
+    querySafe('yt-notification-action-renderer').forEach((el) => {
+      if (hasEnforcementText(el)) {
+        el.remove();
+        removed = true;
+      }
+    });
+    return removed;
   }
 
   // querySelectorAll that never throws on a bad remote selector.

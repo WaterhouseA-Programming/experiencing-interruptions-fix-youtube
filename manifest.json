@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Experiencing Interruptions Fix for YouTube",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "NimblePanda",
   "homepage_url": "https://buymeacoffee.com/nimblepanda",
   "description": "Removes YouTube's 'experiencing interruptions' / ad-blocker enforcement popup and resumes playback. A companion to uBlock Origin. Rules auto-update so it keeps working when YouTube changes things.",
