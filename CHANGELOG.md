@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.1
+
+- Anti-stall: added a `setTimeout` hook in `page-hooks.js` that zeroes only
+  long delays (>= 10 s by default) on YouTube. While YouTube throttles an
+  ad-blocked SABR stream it schedules ~10 s timers (the "timeout 10000" console
+  spam) that gate playback from starting; firing them immediately lets the
+  video start sooner. Short UI timers are untouched.
+  - Threshold is remotely tunable via a new data-only `minTimeoutMs` rule; set
+    it to `0` to disable the squasher for everyone without a release.
+  - Experimental: it does not defeat SABR throttling itself, it only removes
+    the artificial wait, so mileage varies with what YouTube is doing.
+
 ## 1.3.0
 
 - Handle YouTube's new toast-style enforcement. The nag moved out of the old

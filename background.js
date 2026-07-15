@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
   remoteBackdropSelectors: [],
   remoteJsonPopupKeys: [],
   remotePopupText: [],
+  remoteMinTimeoutMs: 10000,
   remoteRulesVersion: 0,
   lastUpdated: null,
   lastUpdateError: null,
@@ -96,6 +97,7 @@ async function updateRules() {
     const backdrop = sanitizeSelectorList(data.backdropSelectors);
     const jsonKeys = sanitizeKeyList(data.jsonPopupKeys);
     const text = sanitizeTextList(data.popupText);
+    const minTimeoutMs = sanitizeTimeout(data.minTimeoutMs);
     const version = Number(data.version) || 0;
 
     await api.storage.local.set({
@@ -103,6 +105,7 @@ async function updateRules() {
       remoteBackdropSelectors: backdrop,
       remoteJsonPopupKeys: jsonKeys,
       remotePopupText: text,
+      remoteMinTimeoutMs: minTimeoutMs,
       remoteRulesVersion: version,
       lastUpdated: new Date().toISOString(),
       lastUpdateError: null,
@@ -113,6 +116,15 @@ async function updateRules() {
     await api.storage.local.set({ lastUpdateError: String(err) });
     throw err;
   }
+}
+
+// Threshold (ms) for page-hooks.js's anti-stall setTimeout squasher: timers
+// with a delay >= this value are zeroed. 0 disables it. Clamped to a sane
+// range; falls back to the 10 s default if the remote value is missing/invalid.
+function sanitizeTimeout(v) {
+  const n = Number(v);
+  if (Number.isFinite(n) && n >= 0 && n <= 600000) return n;
+  return 10000;
 }
 
 // Substrings used by content.js to recognise the toast-style enforcement nag

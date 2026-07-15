@@ -55,6 +55,18 @@
   // player's perspective, no ad inventory exists (Brave's json-prune rule).
   const AD_KEYS = ['adPlacements', 'adSlots', 'playerAds'];
 
+  // Anti-stall: while YouTube throttles an ad-blocked SABR stream it schedules
+  // long setTimeout delays (~10 s, seen as "timeout 10000" in the console) that
+  // gate playback from starting. Zeroing only these long timers lets playback
+  // proceed and leaves normal short UI timers alone. Tunable/killable via the
+  // remote rule "minTimeoutMs"; 0 (or negative) disables squashing entirely.
+  const DEFAULT_MIN_TIMEOUT = 10000;
+  let minTimeout = DEFAULT_MIN_TIMEOUT;
+
+  function applyMinTimeout(v) {
+    if (typeof v === 'number' && isFinite(v)) minTimeout = v;
+  }
+
   function mergePopupKeys(extra) {
     if (!Array.isArray(extra)) return;
     const clean = extra.filter(
@@ -64,10 +76,11 @@
   }
 
   api.storage.local
-    .get(['enabled', 'remoteJsonPopupKeys'])
+    .get(['enabled', 'remoteJsonPopupKeys', 'remoteMinTimeoutMs'])
     .then((s) => {
       if (s && typeof s.enabled === 'boolean') enabled = s.enabled;
       mergePopupKeys(s && s.remoteJsonPopupKeys);
+      if (s) applyMinTimeout(s.remoteMinTimeoutMs);
     })
     .catch(() => {});
 
@@ -76,6 +89,9 @@
     if (changes.enabled) enabled = changes.enabled.newValue !== false;
     if (changes.remoteJsonPopupKeys) {
       mergePopupKeys(changes.remoteJsonPopupKeys.newValue);
+    }
+    if (changes.remoteMinTimeoutMs) {
+      applyMinTimeout(changes.remoteMinTimeoutMs.newValue);
     }
   });
 
@@ -194,6 +210,26 @@
           return obj;
         }, window)
       );
+    }, window);
+  } catch (_e) {}
+
+  // ---- hook: setTimeout (anti-stall) ------------------------------------------
+  //
+  // Zero only long delays (>= minTimeout) so the ~10 s playback-gating timers
+  // YouTube schedules while throttling an ad-blocked stream fire immediately.
+  // Short timers pass through untouched, so ordinary UI timing is unaffected.
+
+  try {
+    const origSetTimeout = page.setTimeout;
+    page.setTimeout = exportFunction(function (fn, delay) {
+      const d =
+        enabled && minTimeout > 0 && typeof delay === 'number' && delay >= minTimeout
+          ? 0
+          : delay;
+      if (arguments.length <= 2) return origSetTimeout(fn, d);
+      // Preserve any extra timer arguments YouTube may pass through.
+      const rest = Array.prototype.slice.call(arguments, 2);
+      return origSetTimeout(fn, d, ...rest);
     }, window);
   } catch (_e) {}
 
