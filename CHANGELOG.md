@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0
+
+- Added a "Leave a review" link to the toolbar popup. It opens the add-on's
+  AMO reviews page in a new tab. No change to how the fix works.
+
 ## 1.3.1
 
 - Anti-stall: added a `setTimeout` hook in `page-hooks.js` that zeroes only

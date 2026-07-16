@@ -1,5 +1,7 @@
 const api = typeof browser !== 'undefined' ? browser : chrome;
 const DONATE_URL = 'https://buymeacoffee.com/nimblepanda';
+const REVIEW_URL =
+  'https://addons.mozilla.org/en-GB/firefox/addon/youtube-interruptions-fix/reviews/';
 
 const enabledEl = document.getElementById('enabled');
 
@@ -13,6 +15,11 @@ enabledEl.addEventListener('change', () =>
 
 document.getElementById('donate').addEventListener('click', () => {
   api.tabs.create({ url: DONATE_URL });
+  window.close();
+});
+
+document.getElementById('review').addEventListener('click', () => {
+  api.tabs.create({ url: REVIEW_URL });
   window.close();
 });
 
