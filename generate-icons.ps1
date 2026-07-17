@@ -1,7 +1,10 @@
 # Rasterises the icon to PNGs (48/96/128) for the manifest and AMO listing.
 # Uses GDI+ so there is no dependency on ImageMagick/Inkscape.
 # Design mirrors icons/icon.svg: dark rounded square, red screen, white play,
-# green "fix" slash.
+# green check badge on the bottom-right corner.
+#
+# Keep this in sync with icons/icon.svg — the coordinates below are the same
+# 96x96 user units the SVG uses, scaled by $s.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File .\generate-icons.ps1
 
@@ -34,23 +37,36 @@ function Save-Icon([int]$size, [string]$path) {
 
   # red screen (#ff0033)
   $red = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 255, 0, 51))
-  $screen = New-RoundRect (14 * $s) (26 * $s) (68 * $s) (44 * $s) (9 * $s)
+  $screen = New-RoundRect (12 * $s) (20 * $s) (72 * $s) (48 * $s) (12 * $s)
   $g.FillPath($red, $screen)
 
-  # white play triangle (42,40)(42,56)(58,48)
+  # white play triangle (41,34)(41,54)(59,44)
   $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
   $tri = @(
-    (New-Object System.Drawing.PointF((42 * $s), (40 * $s))),
-    (New-Object System.Drawing.PointF((42 * $s), (56 * $s))),
-    (New-Object System.Drawing.PointF((58 * $s), (48 * $s)))
+    (New-Object System.Drawing.PointF((41 * $s), (34 * $s))),
+    (New-Object System.Drawing.PointF((41 * $s), (54 * $s))),
+    (New-Object System.Drawing.PointF((59 * $s), (44 * $s)))
   )
   $g.FillPolygon($white, $tri)
 
-  # green "fix" slash (#4ade80), rounded caps
-  $green = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(230, 74, 222, 128)), (7 * $s)
-  $green.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-  $green.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-  $g.DrawLine($green, (20 * $s), (20 * $s), (76 * $s), (76 * $s))
+  # green check badge, bottom-right. Dark ring first so the badge separates
+  # from the red screen, then the green disc, then the tick.
+  $dark = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 15, 15, 15))
+  $g.FillEllipse($dark, (53 * $s), (53 * $s), (36 * $s), (36 * $s))
+  $green = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 74, 222, 128))
+  $g.FillEllipse($green, (57.5 * $s), (57.5 * $s), (27 * $s), (27 * $s))
+
+  # tick (64.5,71.5)(69,76)(78,65.5), dark on green, rounded caps/joins
+  $tick = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 15, 15, 15)), (5.5 * $s)
+  $tick.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+  $tick.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+  $tick.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+  $pts = @(
+    (New-Object System.Drawing.PointF((64.5 * $s), (71.5 * $s))),
+    (New-Object System.Drawing.PointF((69 * $s), (76 * $s))),
+    (New-Object System.Drawing.PointF((78 * $s), (65.5 * $s)))
+  )
+  $g.DrawLines($tick, $pts)
 
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
   $g.Dispose(); $bmp.Dispose()

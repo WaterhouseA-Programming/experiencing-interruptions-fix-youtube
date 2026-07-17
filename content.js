@@ -254,7 +254,23 @@
 
   const kick = () => removeEnforcementPopups();
 
-  const observer = new MutationObserver(kick);
+  // YouTube's DOM churns constantly and each sweep runs several
+  // whole-document querySelectorAll calls, so coalesce to at most one sweep
+  // per frame instead of one per mutation batch. Behaviour is unchanged: the
+  // popup cannot be seen before the next paint anyway. rAF is throttled in
+  // background tabs, which the 1 s interval below backstops.
+  let sweepScheduled = false;
+
+  function scheduleKick() {
+    if (sweepScheduled) return;
+    sweepScheduled = true;
+    requestAnimationFrame(() => {
+      sweepScheduled = false;
+      kick();
+    });
+  }
+
+  const observer = new MutationObserver(scheduleKick);
 
   function startObserving() {
     if (!document.documentElement) {

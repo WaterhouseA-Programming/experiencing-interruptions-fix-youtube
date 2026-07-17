@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.5.0
+
+- Fixed a runaway-timer risk in 1.3.1's anti-stall squasher. It zeroed every
+  delay >= 10 s with no bound, so any YouTube timer that reschedules itself
+  (heartbeats, watch-time pings, idle checks) would re-arm at 0 ms forever: a
+  busy loop burning CPU and flooding YouTube with requests. The squasher is now
+  bounded two ways — it only runs before playback starts, since the stall it
+  targets is a startup stall, and it is capped at 32 squashes per navigation.
+  Both reset on SPA navigation.
+- Ad-inventory field names are now remotely updatable via a new `adKeys` rule.
+  `adPlacements` / `adSlots` / `playerAds` were hardcoded, and every prune is
+  gated on those names appearing, so a rename by YouTube would have silently
+  disabled the whole prevention layer until a new release shipped.
+- The popup sweep in `content.js` now coalesces to at most one pass per frame
+  instead of one per mutation batch. Each pass runs several whole-document
+  `querySelectorAll` calls and YouTube's DOM churns constantly. The 1 s
+  interval still backstops background tabs, where rAF is throttled.
+- Rules now keep updating while the fix is toggled off, so re-enabling it no
+  longer runs on rules up to 6 hours stale, and a failed fetch retries after
+  5/15/60 minutes instead of waiting for the next 6-hour alarm.
+- New icon: the old green slash covered the play button and read as "disabled"
+  at toolbar size. Now a play button with a green check badge.
+
 ## 1.4.0
 
 - Added a "Leave a review" link to the toolbar popup. It opens the add-on's

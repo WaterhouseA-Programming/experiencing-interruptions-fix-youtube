@@ -1,7 +1,7 @@
 {
-  "version": 4,
-  "updatedAt": "2026-07-15",
-  "_comment": "Host this file at the Rules URL (default: the raw.githubusercontent.com path in background.js). Bump 'version' and add entries here to push a fix to every installed copy without releasing a new extension. popupSelectors/backdropSelectors are CSS selectors passed only to querySelectorAll; jsonPopupKeys are JSON key names compared against object keys in page-hooks.js; popupText are substrings compared (lowercased) against a notification's textContent in content.js to catch the toast-style 'Experiencing interruptions?' nag. minTimeoutMs (v1.3.1+) is the threshold for page-hooks.js's anti-stall setTimeout squasher: timers with delay >= this are zeroed so the long playback-gating timers fire immediately; set 0 to disable. Nothing here is ever executed as code. Note: the bare 'yt-notification-action-renderer' selector below blanket-removes that generic toast on v1.2.x (which has no text matching); v1.3.0+ text-gates it via popupText so ordinary toasts are kept.",
+  "version": 5,
+  "updatedAt": "2026-07-17",
+  "_comment": "Host this file at the Rules URL (default: the raw.githubusercontent.com path in background.js). Bump 'version' and add entries here to push a fix to every installed copy without releasing a new extension. popupSelectors/backdropSelectors are CSS selectors passed only to querySelectorAll; jsonPopupKeys are JSON key names compared against object keys in page-hooks.js; adKeys (v1.5.0+) are the ad-inventory field names pruned out of YouTube's JSON responses, extending the built-in adPlacements/adSlots/playerAds so a rename by YouTube can be answered without a release; popupText are substrings compared (lowercased) against a notification's textContent in content.js to catch the toast-style 'Experiencing interruptions?' nag. minTimeoutMs (v1.3.1+) is the threshold for page-hooks.js's anti-stall setTimeout squasher: timers with delay >= this are zeroed so the long playback-gating timers fire immediately; set 0 to disable. Nothing here is ever executed as code. Note: the bare 'yt-notification-action-renderer' selector below blanket-removes that generic toast on v1.2.x (which has no text matching); v1.3.0+ text-gates it via popupText so ordinary toasts are kept.",
   "popupSelectors": [
     "ytd-enforcement-message-view-model",
     "ytd-popup-container tp-yt-paper-dialog",
@@ -14,6 +14,11 @@
     "adBlockMessageViewModel",
     "enforcementMessageViewModel",
     "fancyDismissibleDialogRenderer"
+  ],
+  "adKeys": [
+    "adPlacements",
+    "adSlots",
+    "playerAds"
   ],
   "popupText": [
     "Experiencing interruptions?"

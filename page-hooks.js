@@ -53,7 +53,11 @@
   // Ad-slot fields whose presence lets YouTube schedule ads; when an ad
   // blocker then stops the ad loading, detection fires. Pruned so, from the
   // player's perspective, no ad inventory exists (Brave's json-prune rule).
-  const AD_KEYS = ['adPlacements', 'adSlots', 'playerAds'];
+  // Remotely extensible via the "adKeys" rule: textNeedsPruning gates every
+  // prune on these names appearing, so a rename by YouTube would otherwise
+  // silently disable this whole layer until a new release shipped.
+  const BUILT_IN_AD_KEYS = ['adPlacements', 'adSlots', 'playerAds'];
+  let adKeys = BUILT_IN_AD_KEYS.slice();
 
   // Anti-stall: while YouTube throttles an ad-blocked SABR stream it schedules
   // long setTimeout delays (~10 s, seen as "timeout 10000" in the console) that
@@ -67,19 +71,27 @@
     if (typeof v === 'number' && isFinite(v)) minTimeout = v;
   }
 
-  function mergePopupKeys(extra) {
-    if (!Array.isArray(extra)) return;
+  // Merge validated remote key names onto the built-ins. Key names only, and a
+  // bad/missing remote list just leaves the built-ins in place.
+  function mergeKeys(builtIn, extra) {
+    if (!Array.isArray(extra)) return builtIn.slice();
     const clean = extra.filter(
       (k) => typeof k === 'string' && /^[\w-]{1,100}$/.test(k)
     );
-    popupKeys = Array.from(new Set(BUILT_IN_POPUP_KEYS.concat(clean)));
+    return Array.from(new Set(builtIn.concat(clean)));
   }
 
   api.storage.local
-    .get(['enabled', 'remoteJsonPopupKeys', 'remoteMinTimeoutMs'])
+    .get([
+      'enabled',
+      'remoteJsonPopupKeys',
+      'remoteAdKeys',
+      'remoteMinTimeoutMs',
+    ])
     .then((s) => {
       if (s && typeof s.enabled === 'boolean') enabled = s.enabled;
-      mergePopupKeys(s && s.remoteJsonPopupKeys);
+      popupKeys = mergeKeys(BUILT_IN_POPUP_KEYS, s && s.remoteJsonPopupKeys);
+      adKeys = mergeKeys(BUILT_IN_AD_KEYS, s && s.remoteAdKeys);
       if (s) applyMinTimeout(s.remoteMinTimeoutMs);
     })
     .catch(() => {});
@@ -88,7 +100,13 @@
     if (area !== 'local') return;
     if (changes.enabled) enabled = changes.enabled.newValue !== false;
     if (changes.remoteJsonPopupKeys) {
-      mergePopupKeys(changes.remoteJsonPopupKeys.newValue);
+      popupKeys = mergeKeys(
+        BUILT_IN_POPUP_KEYS,
+        changes.remoteJsonPopupKeys.newValue
+      );
+    }
+    if (changes.remoteAdKeys) {
+      adKeys = mergeKeys(BUILT_IN_AD_KEYS, changes.remoteAdKeys.newValue);
     }
     if (changes.remoteMinTimeoutMs) {
       applyMinTimeout(changes.remoteMinTimeoutMs.newValue);
@@ -101,7 +119,7 @@
   // actually contain something to remove.
   function textNeedsPruning(text) {
     if (!enabled || typeof text !== 'string' || text.length < 20) return false;
-    for (const k of AD_KEYS) {
+    for (const k of adKeys) {
       if (text.includes('"' + k + '"')) return true;
     }
     for (const k of popupKeys) {
@@ -126,7 +144,7 @@
   }
 
   function stripAdKeys(o) {
-    for (const k of AD_KEYS) {
+    for (const k of adKeys) {
       try {
         delete o[k];
       } catch (_e) {}
@@ -218,14 +236,55 @@
   // Zero only long delays (>= minTimeout) so the ~10 s playback-gating timers
   // YouTube schedules while throttling an ad-blocked stream fire immediately.
   // Short timers pass through untouched, so ordinary UI timing is unaffected.
+  //
+  // The squasher MUST stay bounded. YouTube schedules self-rescheduling long
+  // timers (heartbeats, watch-time pings, idle checks) shaped like
+  // `function ping() { ...; setTimeout(ping, 30000); }`. Zeroing those with no
+  // limit re-arms them at 0 ms forever: a busy loop that burns CPU and floods
+  // YouTube with requests. Two independent bounds prevent that:
+  //   1. Only squash before playback starts — the stall we care about is a
+  //      startup stall, so once the video rolls there is nothing to fix.
+  //   2. Never squash more than SQUASH_BUDGET times per navigation, so even if
+  //      playback never starts the loop cannot run away.
+
+  const SQUASH_BUDGET = 32;
+  let squashesLeft = SQUASH_BUDGET;
+  let playbackLatched = false;
+
+  // Latches once the video is genuinely rolling: the startup stall is over and
+  // we stop touching timers for the rest of this navigation. Only consulted
+  // when a timer is already long enough to squash, so the query stays rare.
+  function playbackRunning() {
+    if (playbackLatched) return true;
+    try {
+      const v = document.querySelector('video');
+      if (v && !v.paused && v.currentTime > 0 && v.readyState >= 3) {
+        playbackLatched = true;
+      }
+    } catch (_e) {}
+    return playbackLatched;
+  }
+
+  function shouldSquash(delay) {
+    if (!enabled || minTimeout <= 0) return false;
+    if (typeof delay !== 'number' || delay < minTimeout) return false;
+    if (squashesLeft <= 0) return false;
+    if (playbackRunning()) return false;
+    squashesLeft--;
+    return true;
+  }
+
+  // An SPA navigation is a new video, so a new startup stall gets a new budget.
+  function resetSquashBudget() {
+    squashesLeft = SQUASH_BUDGET;
+    playbackLatched = false;
+  }
+  window.addEventListener('yt-navigate-finish', resetSquashBudget, true);
 
   try {
     const origSetTimeout = page.setTimeout;
     page.setTimeout = exportFunction(function (fn, delay) {
-      const d =
-        enabled && minTimeout > 0 && typeof delay === 'number' && delay >= minTimeout
-          ? 0
-          : delay;
+      const d = shouldSquash(delay) ? 0 : delay;
       if (arguments.length <= 2) return origSetTimeout(fn, d);
       // Preserve any extra timer arguments YouTube may pass through.
       const rest = Array.prototype.slice.call(arguments, 2);

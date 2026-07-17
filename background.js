@@ -24,15 +24,21 @@ const DEFAULT_SETTINGS = {
   remotePopupSelectors: [],
   remoteBackdropSelectors: [],
   remoteJsonPopupKeys: [],
+  remoteAdKeys: [],
   remotePopupText: [],
   remoteMinTimeoutMs: 10000,
   remoteRulesVersion: 0,
   lastUpdated: null,
   lastUpdateError: null,
+  rulesRetryStep: 0,
 };
 
 const UPDATE_ALARM = 'ei-fix-rules-update';
+const RETRY_ALARM = 'ei-fix-rules-retry';
 const UPDATE_PERIOD_MINUTES = 360; // every 6 hours
+// A fetch that fails at alarm time (offline, GitHub blip) would otherwise wait
+// the full 6 hours to try again. Back off instead of hammering.
+const RETRY_STEPS_MINUTES = [5, 15, 60];
 
 // ---- lifecycle ------------------------------------------------------------
 
@@ -58,7 +64,9 @@ api.runtime.onStartup?.addListener(() => {
 });
 
 api.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === UPDATE_ALARM) updateRules().catch(() => {});
+  if (alarm.name === UPDATE_ALARM || alarm.name === RETRY_ALARM) {
+    updateRules().catch(() => {});
+  }
 });
 
 // Let the Options page trigger a manual refresh.
@@ -77,14 +85,27 @@ function scheduleUpdates() {
   api.alarms.create(UPDATE_ALARM, { periodInMinutes: UPDATE_PERIOD_MINUTES });
 }
 
+// Escalating one-shot retry after a failed fetch. The step is kept in storage
+// because the event page can unload between attempts.
+async function scheduleRetry() {
+  const { rulesRetryStep } = await api.storage.local.get('rulesRetryStep');
+  const step = Number(rulesRetryStep) || 0;
+  const delay =
+    RETRY_STEPS_MINUTES[Math.min(step, RETRY_STEPS_MINUTES.length - 1)];
+  await api.storage.local.set({ rulesRetryStep: step + 1 });
+  api.alarms.create(RETRY_ALARM, { delayInMinutes: delay });
+}
+
 async function updateRules() {
-  const { enabled, autoUpdate, rulesUrl } = await api.storage.local.get([
-    'enabled',
+  const { autoUpdate, rulesUrl } = await api.storage.local.get([
     'autoUpdate',
     'rulesUrl',
   ]);
 
-  if (enabled === false || autoUpdate === false) return { skipped: true };
+  // Deliberately not gated on `enabled`: rules must stay fresh while the fix
+  // is toggled off, otherwise re-enabling it runs on rules up to 6 hours stale.
+  // The content script already ignores every rule while disabled.
+  if (autoUpdate === false) return { skipped: true };
 
   const url = rulesUrl || DEFAULT_RULES_URL;
 
@@ -96,6 +117,7 @@ async function updateRules() {
     const popup = sanitizeSelectorList(data.popupSelectors);
     const backdrop = sanitizeSelectorList(data.backdropSelectors);
     const jsonKeys = sanitizeKeyList(data.jsonPopupKeys);
+    const adKeys = sanitizeKeyList(data.adKeys);
     const text = sanitizeTextList(data.popupText);
     const minTimeoutMs = sanitizeTimeout(data.minTimeoutMs);
     const version = Number(data.version) || 0;
@@ -104,16 +126,20 @@ async function updateRules() {
       remotePopupSelectors: popup,
       remoteBackdropSelectors: backdrop,
       remoteJsonPopupKeys: jsonKeys,
+      remoteAdKeys: adKeys,
       remotePopupText: text,
       remoteMinTimeoutMs: minTimeoutMs,
       remoteRulesVersion: version,
       lastUpdated: new Date().toISOString(),
       lastUpdateError: null,
+      rulesRetryStep: 0,
     });
+    api.alarms.clear(RETRY_ALARM);
 
     return { version, popupCount: popup.length, backdropCount: backdrop.length };
   } catch (err) {
     await api.storage.local.set({ lastUpdateError: String(err) });
+    await scheduleRetry().catch(() => {});
     throw err;
   }
 }
