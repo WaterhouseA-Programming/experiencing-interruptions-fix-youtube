@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1
+
+- No functional change. Version bump only — 1.5.0 was already uploaded to AMO
+  (self-distribution channel), so submitting to the listed channel required a
+  new version number.
+
 ## 1.5.0
 
 - Fixed a runaway-timer risk in 1.3.1's anti-stall squasher. It zeroed every
