@@ -12,6 +12,9 @@
   removed in the same sweep. Previously any backdrop (Share, Save to
   playlist, Report dialogs) was stripped and then `playVideo()` was forced,
   restarting videos the user had paused.
+- Minimum Firefox raised to 140 (desktop) and 142 (Android), the first
+  versions that support the `data_collection_permissions` manifest key.
+  Clears the AMO validator warnings.
 
 ## 1.5.1
 
