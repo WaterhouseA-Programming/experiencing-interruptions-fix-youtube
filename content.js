@@ -156,19 +156,18 @@
     // ordinary YouTube toasts ("Added to queue", etc.) are left alone.
     if (removeToastNags()) removedSomething = true;
 
-    // Remove the dark backdrop.
+    // Remove the dark backdrop, but only alongside an enforcement popup.
+    // Backdrops also sit behind ordinary dialogs (Share, Save to playlist,
+    // Report); stripping those and then forcing playVideo() restarted paused
+    // videos and broke YouTube's overlay manager.
+    if (!removedSomething) return false;
     backdropSelectors.forEach((sel) => {
-      querySafe(sel).forEach((el) => {
-        el.remove();
-        removedSomething = true;
-      });
+      querySafe(sel).forEach((el) => el.remove());
     });
 
-    if (removedSomething) {
-      unlockPage();
-      guardAgainstPause();
-    }
-    return removedSomething;
+    unlockPage();
+    guardAgainstPause();
+    return true;
   }
 
   function isNotificationRenderer(el) {

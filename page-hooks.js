@@ -64,7 +64,13 @@
   // gate playback from starting. Zeroing only these long timers lets playback
   // proceed and leaves normal short UI timers alone. Tunable/killable via the
   // remote rule "minTimeoutMs"; 0 (or negative) disables squashing entirely.
-  const DEFAULT_MIN_TIMEOUT = 10000;
+  //
+  // OFF by default since 1.6.0. Zeroing long timers before playback also
+  // fires YouTube's own stall-watchdog and retry-backoff timers instantly, so
+  // the player reloads the stream over and over (or never starts). A 10 s
+  // startup delay is better than a reload loop; the remote rule can still
+  // switch it back on if a narrower fix is needed.
+  const DEFAULT_MIN_TIMEOUT = 0;
   let minTimeout = DEFAULT_MIN_TIMEOUT;
 
   function applyMinTimeout(v) {

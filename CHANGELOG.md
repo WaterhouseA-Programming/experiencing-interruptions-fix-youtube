@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.0
+
+- Turned the anti-stall setTimeout squasher off by default (built-in default,
+  stored default and remote `minTimeoutMs` are all now 0). Zeroing every long
+  timer before playback also fired YouTube's stall-watchdog and retry-backoff
+  timers instantly, which showed up as videos that never start or a player
+  that reloads its frame over and over. The remote rule can still turn it
+  back on. Remote rules v6 pushes the 0 to existing installs immediately.
+- The overlay backdrop is now only removed when an enforcement popup was
+  removed in the same sweep. Previously any backdrop (Share, Save to
+  playlist, Report dialogs) was stripped and then `playVideo()` was forced,
+  restarting videos the user had paused.
+
 ## 1.5.1
 
 - No functional change. Version bump only — 1.5.0 was already uploaded to AMO

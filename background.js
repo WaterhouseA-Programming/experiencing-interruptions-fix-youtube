@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
   remoteJsonPopupKeys: [],
   remoteAdKeys: [],
   remotePopupText: [],
-  remoteMinTimeoutMs: 10000,
+  remoteMinTimeoutMs: 0,
   remoteRulesVersion: 0,
   lastUpdated: null,
   lastUpdateError: null,
@@ -150,7 +150,7 @@ async function updateRules() {
 function sanitizeTimeout(v) {
   const n = Number(v);
   if (Number.isFinite(n) && n >= 0 && n <= 600000) return n;
-  return 10000;
+  return 0;
 }
 
 // Substrings used by content.js to recognise the toast-style enforcement nag
