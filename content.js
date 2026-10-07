@@ -289,4 +289,57 @@
   setInterval(kick, 1000);
   window.addEventListener('yt-navigate-finish', kick, true);
   document.addEventListener('yt-navigate-finish', kick, true);
+
+  // ---- stall detection ----------------------------------------------------
+  //
+  // Running a second ad blocker (Ghostery, AdBlock Plus, ...) alongside
+  // uBlock Origin leaves YouTube's player buffering forever with no media
+  // data at all. Nothing here can fix that, but flagging it turns a
+  // mysterious "this extension broke YouTube" into an actionable hint: the
+  // background page badges the toolbar icon and the popup explains.
+  //
+  // A stall is a visible watch/shorts page whose video has had no current
+  // frame (readyState < HAVE_CURRENT_DATA) for STALL_MS. A video the user
+  // paused after it loaded keeps readyState >= 2, so it never counts.
+
+  const STALL_MS = 15000;
+  let stallSince = 0;
+  let stallReported = false;
+
+  function reportStall(stalled) {
+    if (stalled === stallReported) return;
+    stallReported = stalled;
+    try {
+      api.runtime.sendMessage({ type: 'stall', stalled }).catch(() => {});
+    } catch (_e) {}
+  }
+
+  function checkStall() {
+    const video = document.querySelector('video.html5-main-video, video');
+    const loading =
+      !!video &&
+      document.visibilityState === 'visible' &&
+      /^\/(watch|shorts\/)/.test(location.pathname) &&
+      video.readyState < 2 &&
+      !video.ended;
+    if (!loading) {
+      stallSince = 0;
+      reportStall(false);
+      return;
+    }
+    if (!stallSince) stallSince = Date.now();
+    if (Date.now() - stallSince >= STALL_MS) reportStall(true);
+  }
+
+  if (window === window.top) {
+    setInterval(checkStall, 1000);
+    window.addEventListener(
+      'yt-navigate-finish',
+      () => {
+        stallSince = 0;
+        reportStall(false);
+      },
+      true
+    );
+  }
 })();

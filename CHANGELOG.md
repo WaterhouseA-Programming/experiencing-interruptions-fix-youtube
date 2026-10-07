@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.1
+
+- Stall detection. Running a second ad blocker (Ghostery, AdBlock Plus)
+  alongside uBlock Origin leaves YouTube buffering forever with no media
+  data, and users blamed this add-on: in testing on a real profile with
+  Ghostery + uBlock Origin, 7 of 8 videos never loaded with or without this
+  add-on, and all 8 loaded in about 4 s once Ghostery was off. When a
+  visible watch/Shorts video has had no frame for 15 s, the toolbar icon now
+  shows an orange "!" and the popup explains the likely cause. No new
+  permissions. The badge clears once the video loads or on navigation.
+
 ## 1.6.0
 
 - Turned the anti-stall setTimeout squasher off by default (built-in default,

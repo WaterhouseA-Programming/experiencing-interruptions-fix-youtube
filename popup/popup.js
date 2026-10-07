@@ -9,6 +9,18 @@ api.storage.local.get('enabled').then((s) => {
   enabledEl.checked = s.enabled !== false;
 });
 
+// The background page badges a tab '!' when content.js sees its video stuck
+// with no media data; explain it here.
+api.tabs
+  .query({ active: true, currentWindow: true })
+  .then(([tab]) =>
+    tab ? api.browserAction.getBadgeText({ tabId: tab.id }) : ''
+  )
+  .then((text) => {
+    if (text === '!') document.getElementById('stall').hidden = false;
+  })
+  .catch(() => {});
+
 enabledEl.addEventListener('change', () =>
   api.storage.local.set({ enabled: enabledEl.checked })
 );

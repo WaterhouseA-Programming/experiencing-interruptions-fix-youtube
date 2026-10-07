@@ -58,6 +58,18 @@ api.runtime.onInstalled.addListener(async (details) => {
   updateRules().catch(() => {});
 });
 
+// content.js reports a YouTube video stuck with no media data (usually a
+// second ad blocker fighting uBlock Origin). Badge that tab's toolbar icon;
+// the popup reads the badge back and shows the explanation.
+api.runtime.onMessage.addListener((msg, sender) => {
+  if (!msg || msg.type !== 'stall' || !sender.tab) return;
+  const tabId = sender.tab.id;
+  api.browserAction.setBadgeText({ tabId, text: msg.stalled ? '!' : '' });
+  if (msg.stalled) {
+    api.browserAction.setBadgeBackgroundColor({ tabId, color: '#d97706' });
+  }
+});
+
 api.runtime.onStartup?.addListener(() => {
   scheduleUpdates();
   updateRules().catch(() => {});
