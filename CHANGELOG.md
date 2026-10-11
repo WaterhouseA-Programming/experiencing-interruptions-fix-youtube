@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.2
+
+- Minimum Firefox lowered back to 115 and the `gecko_android` minimum
+  removed. The 140/142 floor from 1.6.0 made AMO show "Download Firefox"
+  instead of an install button in Orion on iPhone, which reports an older
+  Firefox version. Older Firefox ignores `data_collection_permissions`, so
+  the only cost is the AMO validator warnings coming back.
+
 ## 1.6.1
 
 - Stall detection. Running a second ad blocker (Ghostery, AdBlock Plus)
