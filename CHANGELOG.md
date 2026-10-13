@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.7.0
+
+- The "Experiencing interruptions?" toast is now caught in any interface
+  language. It was matched only by its English text, so on YouTube in
+  Spanish, German, French and so on it stayed on screen. It is now also
+  recognised by its "Find out why" link to YouTube's help centre, plus the
+  translated wording for 11 common languages. Ordinary toasts are still kept.
+- Stalled videos now show a notice on the page itself. 1.6.1 only put an
+  orange "!" on the toolbar icon, which Firefox hides in the extensions menu
+  by default, so most people never saw it. After 15 s with no video frame the
+  notice explains that a second ad blocker running alongside uBlock Origin is
+  the usual cause, and offers Reload, Dismiss and "Don't show again".
+
 ## 1.6.2
 
 - Minimum Firefox lowered back to 115 and the `gecko_android` minimum

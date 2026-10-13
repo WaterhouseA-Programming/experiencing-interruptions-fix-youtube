@@ -38,6 +38,20 @@
     'ad blockers are not allowed',
     'using an ad blocker',
     'allow ads',
+    // "Experiencing interruptions?" in other interface languages. Only ever
+    // compared against notification toasts, never the whole page.
+    'interruptions', // fr
+    'interrupciones', // es
+    'unterbrechungen', // de
+    'interrupções', // pt
+    'interruzioni', // it
+    'onderbrekingen', // nl
+    'przerwy', // pl
+    'kesinti', // tr
+    'перебои', // ru
+    'перебої', // uk
+    '中断', // ja / zh
+    '중단', // ko
   ];
 
   // ---- live settings ------------------------------------------------------
@@ -175,9 +189,22 @@
   }
 
   function hasEnforcementText(el) {
+    if (hasSupportLink(el)) return true;
     const t = ((el && el.textContent) || '').toLowerCase();
     if (!t) return false;
     return textPhrases.some((p) => p && t.includes(p));
+  }
+
+  // The nag's "Find out why" button links to YouTube's help centre, which
+  // ordinary toasts ("Saved to Watch later" / "Change") never do. This
+  // catches the toast in any interface language, where the text match fails.
+  function hasSupportLink(el) {
+    if (!isNotificationRenderer(el)) return false;
+    try {
+      return !!el.querySelector('a[href*="support.google.com"]');
+    } catch (_e) {
+      return false;
+    }
   }
 
   function removeToastNags() {
@@ -312,6 +339,100 @@
     try {
       api.runtime.sendMessage({ type: 'stall', stalled }).catch(() => {});
     } catch (_e) {}
+    if (stalled) showStallNotice();
+    else hideStallNotice();
+  }
+
+  // The toolbar badge alone went unseen: Firefox tucks new add-ons into the
+  // extensions menu, so the "!" is hidden for most users. Say it on the page,
+  // once per video, with a way to opt out for good.
+  let stallNoticeOff = false;
+  let stallNoticeDismissed = false;
+  let stallNoticeHost = null;
+
+  api.storage.local
+    .get('stallNoticeOff')
+    .then((s) => {
+      stallNoticeOff = s.stallNoticeOff === true;
+    })
+    .catch(() => {});
+
+  function showStallNotice() {
+    if (stallNoticeOff || stallNoticeDismissed || stallNoticeHost) return;
+    if (!document.body) return;
+    const host = document.createElement('eif-stall-notice');
+    const root = host.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = `
+        .box {
+          position: fixed; top: 72px; left: 50%; transform: translateX(-50%);
+          z-index: 2147483647; width: min(520px, calc(100vw - 32px));
+          box-sizing: border-box; padding: 14px 16px; border-radius: 12px;
+          background: #1f1f1f; color: #f1f1f1;
+          border: 1px solid #d97706; box-shadow: 0 8px 28px rgba(0,0,0,.45);
+          font: 14px/1.45 Roboto, Arial, sans-serif;
+        }
+        .title { font-weight: 700; font-size: 15px; margin: 0 0 6px; color: #fbbf24; }
+        p { margin: 0 0 8px; }
+        .who { color: #aaa; font-size: 12px; }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        button {
+          font: inherit; font-weight: 600; border-radius: 18px; cursor: pointer;
+          padding: 6px 14px; border: 1px solid #555; background: transparent;
+          color: inherit;
+        }
+        .primary { background: #f1f1f1; color: #0f0f0f; border-color: #f1f1f1; }`;
+    const box = el('div', 'box');
+    box.setAttribute('role', 'alert');
+    box.append(
+      el('p', 'title', 'Video not loading?'),
+      el('p', '', 'This is almost always caused by running a second ad blocker ' +
+        '(Ghostery, AdBlock Plus, AdGuard, Brave Shields) alongside uBlock ' +
+        'Origin. They fight over YouTube and the video never starts.'),
+      el('p', '', 'Fix: pause the other blocker on youtube.com, keep uBlock ' +
+        'Origin, then reload.'),
+      el('p', 'who', 'From Experiencing Interruptions Fix. This add-on does ' +
+        'not block video. To check, turn it off from its toolbar icon and reload.')
+    );
+    const row = el('div', 'row');
+    row.append(
+      button('primary', 'reload', 'Reload'),
+      button('', 'dismiss', 'Dismiss'),
+      button('', 'never', "Don't show again")
+    );
+    box.append(row);
+    root.append(style, box);
+    root.addEventListener('click', (e) => {
+      const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+      if (!act) return;
+      if (act === 'reload') location.reload();
+      if (act === 'never') {
+        stallNoticeOff = true;
+        api.storage.local.set({ stallNoticeOff: true }).catch(() => {});
+      }
+      stallNoticeDismissed = true;
+      hideStallNotice();
+    });
+    document.body.appendChild(host);
+    stallNoticeHost = host;
+  }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text) n.textContent = text;
+    return n;
+  }
+
+  function button(cls, act, text) {
+    const b = el('button', cls, text);
+    b.setAttribute('data-act', act);
+    return b;
+  }
+
+  function hideStallNotice() {
+    if (stallNoticeHost) stallNoticeHost.remove();
+    stallNoticeHost = null;
   }
 
   function checkStall() {
@@ -337,6 +458,7 @@
       'yt-navigate-finish',
       () => {
         stallSince = 0;
+        stallNoticeDismissed = false;
         reportStall(false);
       },
       true
