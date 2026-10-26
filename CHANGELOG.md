@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.2
+
+- A small one-time card in the corner of YouTube asks for a review, only
+  once the add-on has been installed for 7 days and has removed at least 3
+  nags, and only right after it removes one. "Not now" (or ignoring it)
+  waits 14 days; "Leave a review" or "Never" stops it for good. The install
+  date and removal count are stored locally and never leave the browser.
+
 ## 1.7.1
 
 - The toolbar popup now says when the add-on is not allowed in private

@@ -48,6 +48,11 @@ api.runtime.onInstalled.addListener(async (details) => {
   const merged = { ...DEFAULT_SETTINGS, ...stored };
   await api.storage.local.set(merged);
 
+  // content.js waits a week from this before asking for a review. Existing
+  // users get it on their first update, so they wait a week too.
+  const { installedAt } = await api.storage.local.get('installedAt');
+  if (!installedAt) await api.storage.local.set({ installedAt: Date.now() });
+
   if (details.reason === 'install') {
     // Open a friendly welcome page (not the payment link directly).
     api.tabs.create({ url: api.runtime.getURL('welcome/welcome.html') });

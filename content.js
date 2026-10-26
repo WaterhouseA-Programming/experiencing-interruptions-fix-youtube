@@ -278,7 +278,11 @@
 
   // ---- observer -----------------------------------------------------------
 
-  const kick = () => removeEnforcementPopups();
+  const kick = () => {
+    // Deferred: the review section's state below isn't initialised yet when
+    // the first sweep runs during startup.
+    if (removeEnforcementPopups()) setTimeout(onNagRemoved, 0);
+  };
 
   // YouTube's DOM churns constantly and each sweep runs several
   // whole-document querySelectorAll calls, so coalesce to at most one sweep
@@ -450,6 +454,105 @@
     }
     if (!stallSince) stallSince = Date.now();
     if (Date.now() - stallSince >= STALL_MS) reportStall(true);
+  }
+
+  // ---- review card --------------------------------------------------------
+  //
+  // Ask for a review only from people it is working for: a week after
+  // install, once it has removed a few nags, right after removing one. A
+  // small corner card, shown at most once per REVIEW_SNOOZE_MS, never again
+  // after "Leave a review" or "Never".
+
+  const REVIEW_URL =
+    'https://addons.mozilla.org/firefox/addon/youtube-interruptions-fix/reviews/';
+  const REVIEW_MIN_AGE_MS = 7 * 24 * 3600 * 1000;
+  const REVIEW_MIN_NAGS = 3;
+  const REVIEW_SNOOZE_MS = 14 * 24 * 3600 * 1000;
+  // YouTube re-renders the nag a few times; count one removal per burst.
+  const NAG_COUNT_GAP_MS = 10000;
+  let lastNagCountedAt = 0;
+  let reviewHost = null;
+
+  function onNagRemoved() {
+    if (window !== window.top) return;
+    const now = Date.now();
+    if (now - lastNagCountedAt < NAG_COUNT_GAP_MS) return;
+    lastNagCountedAt = now;
+    api.storage.local
+      .get(['nagsRemoved', 'installedAt', 'reviewPromptOff', 'reviewSnoozeUntil'])
+      .then((s) => {
+        const nags = (Number(s.nagsRemoved) || 0) + 1;
+        api.storage.local.set({ nagsRemoved: nags }).catch(() => {});
+        if (
+          s.reviewPromptOff === true ||
+          !s.installedAt ||
+          now - s.installedAt < REVIEW_MIN_AGE_MS ||
+          nags < REVIEW_MIN_NAGS ||
+          now < (Number(s.reviewSnoozeUntil) || 0)
+        ) {
+          return;
+        }
+        // Ignoring the card counts as "Not now".
+        api.storage.local
+          .set({ reviewSnoozeUntil: now + REVIEW_SNOOZE_MS })
+          .catch(() => {});
+        showReviewCard();
+      })
+      .catch(() => {});
+  }
+
+  function showReviewCard() {
+    if (reviewHost || stallNoticeHost || !document.body) return;
+    const host = document.createElement('eif-review-card');
+    const root = host.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = `
+        .box {
+          position: fixed; bottom: 24px; left: 24px; z-index: 2147483647;
+          width: min(300px, calc(100vw - 48px)); box-sizing: border-box;
+          padding: 12px 14px; border-radius: 12px;
+          background: #1f1f1f; color: #f1f1f1; border: 1px solid #3a3a3a;
+          box-shadow: 0 6px 20px rgba(0,0,0,.35);
+          font: 13px/1.4 Roboto, Arial, sans-serif;
+        }
+        p { margin: 0 0 10px; }
+        .row { display: flex; flex-wrap: wrap; gap: 6px; }
+        button {
+          font: inherit; font-weight: 500; border-radius: 16px; cursor: pointer;
+          padding: 5px 12px; border: 1px solid #555; background: transparent;
+          color: inherit;
+        }
+        .primary { background: #f1f1f1; color: #0f0f0f; border-color: #f1f1f1; }`;
+    const box = el('div', 'box');
+    box.setAttribute('role', 'status');
+    box.append(
+      el('p', '', 'Experiencing Interruptions Fix just cleared another ' +
+        'YouTube nag. If it has been useful, a quick review helps others find it.')
+    );
+    const row = el('div', 'row');
+    row.append(
+      button('primary', 'review', 'Leave a review'),
+      button('', 'later', 'Not now'),
+      button('', 'never', 'Never')
+    );
+    box.append(row);
+    root.append(style, box);
+    root.addEventListener('click', (e) => {
+      const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+      if (!act) return;
+      if (act === 'review') window.open(REVIEW_URL, '_blank', 'noopener');
+      if (act === 'review' || act === 'never') {
+        api.storage.local.set({ reviewPromptOff: true }).catch(() => {});
+      }
+      hideReviewCard();
+    });
+    document.body.appendChild(host);
+    reviewHost = host;
+  }
+
+  function hideReviewCard() {
+    if (reviewHost) reviewHost.remove();
+    reviewHost = null;
   }
 
   // ---- nag report ---------------------------------------------------------
