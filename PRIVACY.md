@@ -11,7 +11,6 @@ no analytics, no tracking, and no account.
   the ad-blocker enforcement popup and resumes video playback.
 - Stores your settings (enabled on/off, auto-update on/off, rules URL) locally
   in the browser using the `storage` permission. This never leaves your device.
-
 - Stores the install date and a count of popups removed, locally, to decide
   when to show a one-time review request. These never leave your device.
 
