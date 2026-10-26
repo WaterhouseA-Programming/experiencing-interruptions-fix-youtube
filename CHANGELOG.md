@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.7.1
+
+- The toolbar popup now says when the add-on is not allowed in private
+  windows, with the steps to turn it on. Firefox only runs add-ons there
+  when the user allows it, so the nag in a private window looked like the
+  fix failing.
+- New "Popup still showing? Report it" button in the toolbar popup. Click it
+  on the YouTube tab while the nag is on screen: it copies a snapshot of the
+  visible dialogs and toasts (markup only, plus extension, rules and Firefox
+  versions) and opens a GitHub issue to paste it into. Nothing is sent by the
+  add-on itself. Several reviewers still see the nag, probably a variant
+  YouTube is testing, and this is how to get its markup.
+
 ## 1.7.0
 
 - The "Experiencing interruptions?" toast is now caught in any interface

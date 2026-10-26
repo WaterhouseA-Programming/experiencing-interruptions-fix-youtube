@@ -452,7 +452,101 @@
     if (Date.now() - stallSince >= STALL_MS) reportStall(true);
   }
 
+  // ---- nag report ---------------------------------------------------------
+  //
+  // Some users still see the nag, presumably a variant YouTube A/B tests that
+  // none of the selectors or phrases match. The popup's "Report" button asks
+  // for a snapshot of whatever dialogs and toasts are on screen so the user
+  // can paste it into a GitHub issue. Built only on that click, never sent
+  // anywhere by the extension itself.
+
+  const REPORT_SELECTORS = [
+    'ytd-enforcement-message-view-model',
+    'yt-notification-action-renderer',
+    'tp-yt-paper-toast',
+    'tp-yt-paper-dialog',
+    'tp-yt-iron-overlay-backdrop',
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+  ];
+  const REPORT_ELEMENT_MAX = 6000;
+  const REPORT_ELEMENTS_MAX = 12;
+
+  function isVisible(node) {
+    if (!node.getClientRects().length) return false;
+    const cs = getComputedStyle(node);
+    return cs.visibility !== 'hidden' && cs.display !== 'none';
+  }
+
+  // Icon path data is most of a YouTube element's markup and tells us nothing.
+  function compactHtml(node) {
+    const html = node.outerHTML
+      .replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>')
+      .replace(/\s+/g, ' ');
+    return html.length > REPORT_ELEMENT_MAX
+      ? html.slice(0, REPORT_ELEMENT_MAX) + ' …[truncated]'
+      : html;
+  }
+
+  function buildReport() {
+    const seen = new Set();
+    const elements = [];
+    for (const sel of REPORT_SELECTORS) {
+      for (const node of querySafe(sel)) {
+        if (elements.length >= REPORT_ELEMENTS_MAX) break;
+        if (seen.has(node) || !isVisible(node)) continue;
+        // Skip nodes already inside a captured one.
+        if (elements.some((e) => e.node.contains(node))) continue;
+        seen.add(node);
+        elements.push({ node, sel });
+      }
+    }
+    const video = document.querySelector('video.html5-main-video, video');
+    const page = /^\/watch/.test(location.pathname)
+      ? 'watch'
+      : /^\/shorts\//.test(location.pathname)
+      ? 'shorts'
+      : 'other';
+    const lines = [
+      'Extension: ' + api.runtime.getManifest().version +
+        (enabled ? '' : ' (fix turned OFF)'),
+      'Browser: ' + navigator.userAgent,
+      'Private window: ' + (api.extension.inIncognitoContext ? 'yes' : 'no'),
+      'YouTube language: ' + (document.documentElement.lang || '?'),
+      'Page: ' + page,
+      'Video: ' +
+        (video
+          ? (video.paused ? 'paused' : 'playing') + ', readyState ' + video.readyState
+          : 'none'),
+      'Scroll locked: ' +
+        (document.documentElement.hasAttribute('scroll-locked') ||
+        (document.body && document.body.hasAttribute('scroll-locked'))
+          ? 'yes'
+          : 'no'),
+      'On-screen dialogs/toasts: ' + elements.length,
+    ];
+    elements.forEach((e, i) => {
+      lines.push('', '--- ' + (i + 1) + ' (' + e.sel + ') ---', compactHtml(e.node));
+    });
+    return lines.join('\n');
+  }
+
   if (window === window.top) {
+    api.runtime.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== 'build-report') return;
+      return api.storage.local
+        .get('remoteRulesVersion')
+        .then(
+          (s) => s,
+          () => ({})
+        )
+        .then((s) => ({
+          report:
+            'Rules version: ' + (s.remoteRulesVersion || 'built-in') + '\n' +
+            buildReport(),
+        }));
+    });
+
     setInterval(checkStall, 1000);
     window.addEventListener(
       'yt-navigate-finish',

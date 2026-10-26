@@ -1,6 +1,6 @@
 # Privacy Policy — Experiencing Interruptions Fix for YouTube
 
-Last updated: 2026-07-06
+Last updated: 2026-10-26
 
 This extension does not collect, store, or transmit any personal data. There is
 no analytics, no tracking, and no account.
@@ -11,6 +11,15 @@ no analytics, no tracking, and no account.
   the ad-blocker enforcement popup and resumes video playback.
 - Stores your settings (enabled on/off, auto-update on/off, rules URL) locally
   in the browser using the `storage` permission. This never leaves your device.
+
+## Problem reports
+
+The toolbar popup's "Popup still showing? Report it" button builds a text
+report only when you click it: the HTML of the dialogs and notifications
+visible on the YouTube page, the extension, rules and browser versions, and
+YouTube's interface language. It is copied to your clipboard and a GitHub
+issue page is opened. The extension never sends the report itself; it is
+shared only if you paste and post it.
 
 ## Network requests
 
