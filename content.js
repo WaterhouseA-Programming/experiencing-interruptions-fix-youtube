@@ -502,7 +502,7 @@
   }
 
   function showReviewCard() {
-    if (reviewHost || stallNoticeHost || !document.body) return;
+    if (reviewHost || stallNoticeHost || missedNagHost || !document.body) return;
     const host = document.createElement('eif-review-card');
     const root = host.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
@@ -634,21 +634,229 @@
     return lines.join('\n');
   }
 
+  function fullReport() {
+    return api.storage.local
+      .get('remoteRulesVersion')
+      .then(
+        (s) => s,
+        () => ({})
+      )
+      .then(
+        (s) =>
+          'Rules version: ' + (s.remoteRulesVersion || 'built-in') + '\n' +
+          buildReport()
+      );
+  }
+
+  // ---- missed-nag detection -----------------------------------------------
+  //
+  // The selectors and phrases only catch nags we have seen. A new variant
+  // still gives itself away: the video pauses with no click or key press
+  // while a toast or dialog the sweep left alone is on screen. Then resume
+  // the video and offer, on the page, to report what got through, since
+  // affected users rarely find the toolbar popup's Report button.
+
+  const USER_PAUSE_MS = 1500;
+  const OVERLAY_WAIT_MS = 3000;
+  const ISSUE_URL =
+    'https://github.com/WaterhouseA-Programming/experiencing-interruptions-fix-youtube/issues/new';
+  // GitHub rejects very long URLs; longer reports go via the clipboard.
+  const ISSUE_URL_MAX = 7000;
+  const UNHANDLED_SELECTORS = [
+    'yt-notification-action-renderer',
+    'tp-yt-paper-dialog',
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+  ];
+
+  let lastUserInputAt = 0;
+  let missedNagChecking = false;
+  let missedNagShownThisPage = false;
+  let missedNagOff = false;
+  let missedNagHost = null;
+
+  api.storage.local
+    .get('missedNagNoticeOff')
+    .then((s) => {
+      missedNagOff = s.missedNagNoticeOff === true;
+    })
+    .catch(() => {});
+
+  function noteUserInput(e) {
+    if (e.isTrusted) lastUserInputAt = Date.now();
+  }
+
+  // Overlays the sweep did not remove. "Continue watching?" is YouTube's own
+  // idle check: it pauses on purpose and is left alone.
+  function findUnhandledOverlay() {
+    for (const sel of UNHANDLED_SELECTORS) {
+      for (const node of querySafe(sel)) {
+        if (!isVisible(node)) continue;
+        if (node.querySelector && node.querySelector('yt-confirm-dialog-renderer')) {
+          continue;
+        }
+        if (node.closest && node.closest('eif-stall-notice, eif-review-card, eif-missed-nag')) {
+          continue;
+        }
+        return node;
+      }
+    }
+    return null;
+  }
+
+  function onVideoPause(e) {
+    if (!enabled || missedNagChecking || missedNagShownThisPage) return;
+    const video = e.target;
+    if (!video || video.tagName !== 'VIDEO' || video.ended) return;
+    if (!/^\/(watch|shorts\/)/.test(location.pathname)) return;
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - lastUserInputAt < USER_PAUSE_MS) return;
+    // The nag can land just before or just after the pause.
+    missedNagChecking = true;
+    const started = Date.now();
+    (function check() {
+      if (!video.paused || Date.now() - lastUserInputAt < USER_PAUSE_MS) {
+        missedNagChecking = false;
+        return;
+      }
+      const overlay = findUnhandledOverlay();
+      if (overlay) {
+        missedNagChecking = false;
+        onMissedNag();
+        return;
+      }
+      if (Date.now() - started < OVERLAY_WAIT_MS) setTimeout(check, 250);
+      else missedNagChecking = false;
+    })();
+  }
+
+  function onMissedNag() {
+    missedNagShownThisPage = true;
+    // Snapshot now: the overlay may be gone by the time the user clicks.
+    const reportPromise = fullReport().catch(() => '');
+    guardAgainstPause();
+    api.storage.local
+      .get('missedNags')
+      .then((s) =>
+        api.storage.local.set({ missedNags: (Number(s.missedNags) || 0) + 1 })
+      )
+      .catch(() => {});
+    if (!missedNagOff) reportPromise.then(showMissedNagNotice);
+  }
+
+  function showMissedNagNotice(report) {
+    if (missedNagHost || !document.body) return;
+    hideReviewCard();
+    const host = document.createElement('eif-missed-nag');
+    const root = host.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = `
+        .box {
+          position: fixed; bottom: 24px; left: 24px; z-index: 2147483647;
+          width: min(340px, calc(100vw - 48px)); box-sizing: border-box;
+          padding: 12px 14px; border-radius: 12px;
+          background: #1f1f1f; color: #f1f1f1; border: 1px solid #d97706;
+          box-shadow: 0 6px 20px rgba(0,0,0,.35);
+          font: 13px/1.4 Roboto, Arial, sans-serif;
+        }
+        .title { font-weight: 700; color: #fbbf24; margin: 0 0 4px; }
+        p { margin: 0 0 10px; }
+        .row { display: flex; flex-wrap: wrap; gap: 6px; }
+        button {
+          font: inherit; font-weight: 500; border-radius: 16px; cursor: pointer;
+          padding: 5px 12px; border: 1px solid #555; background: transparent;
+          color: inherit;
+        }
+        .primary { background: #f1f1f1; color: #0f0f0f; border-color: #f1f1f1; }`;
+    const box = el('div', 'box');
+    box.setAttribute('role', 'status');
+    const msg = el('p', '', 'YouTube paused the video behind a popup ' +
+      'Experiencing Interruptions Fix did not recognise, so it resumed it. ' +
+      'Reporting the popup lets it be handled for everyone.');
+    box.append(el('p', 'title', 'A new YouTube popup got through'), msg);
+    const row = el('div', 'row');
+    row.append(
+      button('primary', 'report', 'Report it'),
+      button('', 'dismiss', 'Dismiss'),
+      button('', 'never', "Don't show again")
+    );
+    box.append(row);
+    root.append(style, box);
+    root.addEventListener('click', (e) => {
+      const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+      if (!act) return;
+      if (act === 'report') {
+        openIssue(report).then((note) => {
+          if (note) msg.textContent = note;
+          else hideMissedNagNotice();
+        });
+        return;
+      }
+      if (act === 'never') {
+        missedNagOff = true;
+        api.storage.local.set({ missedNagNoticeOff: true }).catch(() => {});
+      }
+      hideMissedNagNotice();
+    });
+    document.body.appendChild(host);
+    missedNagHost = host;
+  }
+
+  function hideMissedNagNotice() {
+    if (missedNagHost) missedNagHost.remove();
+    missedNagHost = null;
+  }
+
+  // Short reports go straight into the issue body; long ones are copied for
+  // pasting. Resolves to a message to show if the report could not go either
+  // way, or '' once the issue page is open.
+  function openIssue(report) {
+    const head =
+      'A YouTube popup got through (detected automatically by the add-on).\n\n';
+    const inline = head + '```\n' + report + '\n```\n';
+    const url = (body) =>
+      ISSUE_URL +
+      '?title=' + encodeURIComponent('Popup not removed (auto-detected)') +
+      '&body=' + encodeURIComponent(body);
+    if (url(inline).length <= ISSUE_URL_MAX) {
+      window.open(url(inline), '_blank', 'noopener');
+      return Promise.resolve('');
+    }
+    return navigator.clipboard.writeText(report).then(
+      () => {
+        window.open(
+          url(head + 'Paste the report the add-on copied to your clipboard ' +
+            'below. Check it first: it is the markup of the popups on screen.' +
+            '\n\n```\n\n```\n'),
+          '_blank',
+          'noopener'
+        );
+        return '';
+      },
+      () =>
+        'Could not copy the report. Use "Popup still showing? Report it" ' +
+        'in the add-on\'s toolbar menu instead.'
+    );
+  }
+
   if (window === window.top) {
     api.runtime.onMessage.addListener((msg) => {
       if (!msg || msg.type !== 'build-report') return;
-      return api.storage.local
-        .get('remoteRulesVersion')
-        .then(
-          (s) => s,
-          () => ({})
-        )
-        .then((s) => ({
-          report:
-            'Rules version: ' + (s.remoteRulesVersion || 'built-in') + '\n' +
-            buildReport(),
-        }));
+      return fullReport().then((report) => ({ report }));
     });
+
+    ['pointerdown', 'keydown', 'touchstart'].forEach((t) =>
+      document.addEventListener(t, noteUserInput, true)
+    );
+    document.addEventListener('pause', onVideoPause, true);
+    window.addEventListener(
+      'yt-navigate-finish',
+      () => {
+        missedNagShownThisPage = false;
+        hideMissedNagNotice();
+      },
+      true
+    );
 
     setInterval(checkStall, 1000);
     window.addEventListener(

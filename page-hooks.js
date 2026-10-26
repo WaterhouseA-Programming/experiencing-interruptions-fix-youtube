@@ -131,6 +131,43 @@
     for (const k of popupKeys) {
       if (text.includes('"' + k + '"')) return true;
     }
+    if (
+      text.includes('"' + TOAST_KEY + '"') &&
+      text.includes(HELP_LINK)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // The "Experiencing interruptions?" toast arrives as a generic
+  // notificationActionRenderer, the same renderer as "Saved to Watch later",
+  // so its key name can't go in popupKeys. What sets it apart is its "Find
+  // out why" button linking to YouTube's help centre, in every language.
+  const TOAST_KEY = 'notificationActionRenderer';
+  const HELP_LINK = 'support.google.com';
+
+  // Bounded search for a string containing HELP_LINK anywhere in a toast.
+  function hasHelpLink(node, depth) {
+    if (depth > 12 || !node) return false;
+    if (typeof node === 'string') return node.includes(HELP_LINK);
+    if (typeof node !== 'object') return false;
+    let keys;
+    try {
+      keys = Object.keys(node);
+    } catch (_e) {
+      return false;
+    }
+    if (keys.length > 500) return false;
+    for (const key of keys) {
+      let value;
+      try {
+        value = node[key];
+      } catch (_e) {
+        continue;
+      }
+      if (hasHelpLink(value, depth + 1)) return true;
+    }
     return false;
   }
 
@@ -195,6 +232,9 @@
       return false;
     }
     if (!popup || typeof popup !== 'object') return false;
+    try {
+      if (popup[TOAST_KEY] && hasHelpLink(popup[TOAST_KEY], 0)) return true;
+    } catch (_e) {}
     return popupKeys.some((k) => {
       try {
         return k in popup;

@@ -13,6 +13,8 @@ no analytics, no tracking, and no account.
   in the browser using the `storage` permission. This never leaves your device.
 - Stores the install date and a count of popups removed, locally, to decide
   when to show a one-time review request. These never leave your device.
+- Stores a local count of popups it detected but could not remove. This
+  never leaves your device.
 
 ## Problem reports
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.8.0
+
+- The "Experiencing interruptions?" toast is now stopped before YouTube
+  draws it. It arrives as a generic `notificationActionRenderer`, so the
+  data layer let it through and only the on-screen cleanup could catch it,
+  by text or link. Toasts whose button links to YouTube's help centre are
+  now deleted from YouTube's data, in any language and whatever element
+  YouTube renders them with. "Saved to Watch later" and other toasts are
+  untouched.
+- Missed-nag detection. If the video pauses with no click or key press
+  while a toast or dialog the add-on didn't recognise is on screen, the
+  add-on resumes the video and shows a small notice offering to report the
+  popup. "Report it" opens a GitHub issue with the snapshot already filled
+  in (or copied, if it's long). YouTube's "Continue watching?" check is
+  left alone. Shown at most once per video, with "Don't show again".
+
 ## 1.7.2
 
 - A small one-time card in the corner of YouTube asks for a review, only
