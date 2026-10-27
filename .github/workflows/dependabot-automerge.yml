@@ -1,0 +1,72 @@
+# Installed by update-routine/github/rollout.ps1. Edit the copy there, not in each repo.
+# Merges Dependabot patch/minor PRs once every changed package still installs and builds.
+# Majors, and anything that fails to build, stay open for a human (they show in the weekly report).
+name: Dependabot auto-merge
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR: ${{ github.event.pull_request.html_url }}
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      - name: Leave majors for review
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: gh pr comment "$PR" --body "Major update: not auto-merged." && exit 0
+
+      - if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and build changed packages
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: |
+          set -e
+          base="origin/${{ github.event.pull_request.base.ref }}"
+          dirs=$(git diff --name-only "$base"...HEAD | grep -E '(^|/)(package\.json|package-lock\.json|pnpm-lock\.yaml|requirements\.txt)$' | xargs -r -n1 dirname | sort -u)
+          for d in $dirs; do
+            echo "::group::$d"
+            cd "$GITHUB_WORKSPACE/$d"
+            if [ -f pnpm-lock.yaml ]; then
+              corepack enable
+              pnpm install --frozen-lockfile
+              pnpm -r --if-present build
+            elif [ -f package.json ]; then
+              npm ci --no-audit --no-fund
+              npm run build --if-present
+            elif [ -f requirements.txt ]; then
+              python3 -m venv /tmp/venv && /tmp/venv/bin/pip install -q -r requirements.txt
+              python3 -m compileall -q .
+            fi
+            echo "::endgroup::"
+          done
+
+      - name: Merge
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge "$PR" --squash --delete-branch
+
+      # A merge made with GITHUB_TOKEN does not fire push workflows, so start any deploy workflow by hand.
+      # (Vercel / Cloudflare git integrations deploy on their own.)
+      - name: Trigger deploy workflows
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: |
+          base="${{ github.event.pull_request.base.ref }}"
+          for f in $(grep -l 'workflow_dispatch' .github/workflows/*.yml 2>/dev/null | xargs -r grep -l -E '^\s*push:'); do
+            gh workflow run "$(basename "$f")" --ref "$base" || true
+          done
