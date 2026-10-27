@@ -22,7 +22,7 @@ jobs:
 
       - name: Leave majors for review
         if: steps.meta.outputs.update-type == 'version-update:semver-major'
-        run: gh pr comment "$PR" --body "Major update: not auto-merged." && exit 0
+        run: gh pr comment "$PR" --body "Major update, not auto-merged."
 
       - if: steps.meta.outputs.update-type != 'version-update:semver-major'
         uses: actions/checkout@v4
