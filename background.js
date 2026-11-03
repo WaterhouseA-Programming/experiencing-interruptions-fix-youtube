@@ -53,6 +53,8 @@ api.runtime.onInstalled.addListener(async (details) => {
   const { installedAt } = await api.storage.local.get('installedAt');
   if (!installedAt) await api.storage.local.set({ installedAt: Date.now() });
 
+  refreshBadge();
+
   if (details.reason === 'install') {
     // Open a friendly welcome page (not the payment link directly).
     api.tabs.create({ url: api.runtime.getURL('welcome/welcome.html') });
@@ -66,18 +68,130 @@ api.runtime.onInstalled.addListener(async (details) => {
 // content.js reports a YouTube video stuck with no media data (usually a
 // second ad blocker fighting uBlock Origin). Badge that tab's toolbar icon;
 // the popup reads the badge back and shows the explanation.
+// A tab-specific value overrides the optional global count badge; null
+// hands the tab back to the global one when the stall clears.
 api.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || msg.type !== 'stall' || !sender.tab) return;
   const tabId = sender.tab.id;
-  api.browserAction.setBadgeText({ tabId, text: msg.stalled ? '!' : '' });
-  if (msg.stalled) {
-    api.browserAction.setBadgeBackgroundColor({ tabId, color: '#d97706' });
-  }
+  api.browserAction.setBadgeText({ tabId, text: msg.stalled ? '!' : null });
+  api.browserAction.setBadgeBackgroundColor({
+    tabId,
+    color: msg.stalled ? '#d97706' : null,
+  });
+  if (msg.stalled) api.storage.local.set({ lastFailureAt: Date.now() });
 });
 
 api.runtime.onStartup?.addListener(() => {
+  // Marks the start of this browser session: the review prompt is never
+  // shown in the session the add-on was installed in.
+  api.storage.local.set({ sessionStartedAt: Date.now() });
   scheduleUpdates();
   updateRules().catch(() => {});
+  refreshBadge();
+});
+
+// ---- popups-cleared count and review prompt --------------------------------
+//
+// content.js sends 'nag-cleared' once per confirmed removal (already
+// de-duplicated per tab). The count lives here so tabs and frames never race
+// each other's read-then-write. The count and review state stay on this
+// device; nothing is sent anywhere.
+
+const REVIEW_MIN_AGE_MS = 7 * 24 * 3600 * 1000;
+const REVIEW_SNOOZE_MS = 14 * 24 * 3600 * 1000;
+const REVIEW_AFTER_FAILURE_MS = 7 * 24 * 3600 * 1000;
+const REVIEW_FIRST_AT = 5; // first ask at 5 popups cleared
+const REVIEW_LATER_STEP = 20; // after "Later", wait for 20 more as well
+
+let countQueue = Promise.resolve();
+
+function onNagCleared() {
+  const run = countQueue.then(async () => {
+    const now = Date.now();
+    const s = await api.storage.local.get([
+      'nagsRemoved',
+      'installedAt',
+      'sessionStartedAt',
+      'lastFailureAt',
+      'reviewPromptOff',
+      'reviewSnoozeUntil',
+      'reviewNextAt',
+      'reviewPending',
+    ]);
+    const count = (Number(s.nagsRemoved) || 0) + 1;
+    const update = { nagsRemoved: count };
+    const askReview =
+      s.reviewPromptOff !== true &&
+      s.reviewPending !== true &&
+      !!s.installedAt &&
+      now - s.installedAt >= REVIEW_MIN_AGE_MS &&
+      // First session: installed after this browser session began (or no
+      // restart seen yet since this version arrived).
+      !!s.sessionStartedAt &&
+      s.installedAt < s.sessionStartedAt &&
+      now - (Number(s.lastFailureAt) || 0) >= REVIEW_AFTER_FAILURE_MS &&
+      count >= Math.max(REVIEW_FIRST_AT, Number(s.reviewNextAt) || 0) &&
+      now >= (Number(s.reviewSnoozeUntil) || 0);
+    if (askReview) {
+      // Ignoring the prompt counts as "Later": the snooze starts now, and the
+      // toolbar popup keeps offering it until it is answered or expires.
+      update.reviewPending = true;
+      update.reviewSnoozeUntil = now + REVIEW_SNOOZE_MS;
+      update.reviewNextAt = count + REVIEW_LATER_STEP;
+    }
+    await api.storage.local.set(update);
+    return { count, askReview };
+  });
+  countQueue = run.catch(() => {});
+  return run;
+}
+
+// answer: 'review' or 'never' stop it for good; 'later' waits 14 days and
+// another REVIEW_LATER_STEP popups.
+async function onReviewAnswer(answer) {
+  if (answer === 'review' || answer === 'never') {
+    await api.storage.local.set({ reviewPromptOff: true, reviewPending: false });
+    return;
+  }
+  const { nagsRemoved } = await api.storage.local.get('nagsRemoved');
+  await api.storage.local.set({
+    reviewPending: false,
+    reviewSnoozeUntil: Date.now() + REVIEW_SNOOZE_MS,
+    reviewNextAt: (Number(nagsRemoved) || 0) + REVIEW_LATER_STEP,
+  });
+}
+
+api.runtime.onMessage.addListener((msg) => {
+  if (!msg) return;
+  if (msg.type === 'nag-cleared') return onNagCleared();
+  if (msg.type === 'review-answer') return onReviewAnswer(msg.answer);
+});
+
+// Optional count on the toolbar icon, off by default (Settings).
+function badgeText(n) {
+  if (n <= 0) return '';
+  if (n < 1000) return String(n);
+  if (n < 10000) return (Math.floor(n / 100) / 10) + 'k';
+  return Math.floor(n / 1000) + 'k';
+}
+
+async function refreshBadge() {
+  try {
+    const { nagsRemoved, showCountBadge } = await api.storage.local.get([
+      'nagsRemoved',
+      'showCountBadge',
+    ]);
+    const on = showCountBadge === true;
+    api.browserAction.setBadgeText({
+      text: on ? badgeText(Number(nagsRemoved) || 0) : '',
+    });
+    if (on) api.browserAction.setBadgeBackgroundColor({ color: '#606060' });
+  } catch (_e) {}
+}
+
+api.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.nagsRemoved || changes.showCountBadge) refreshBadge();
 });
 
 api.alarms.onAlarm.addListener((alarm) => {

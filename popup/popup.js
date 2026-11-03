@@ -11,6 +11,66 @@ api.storage.local.get('enabled').then((s) => {
   enabledEl.checked = s.enabled !== false;
 });
 
+// "Cleared N YouTube popups for you". The count is kept by background.js.
+function showCount(n) {
+  const num = document.getElementById('count-num');
+  const text = document.getElementById('count-text');
+  if (n > 0) {
+    num.textContent = 'Cleared ' + n.toLocaleString();
+    text.textContent = n === 1 ? 'YouTube popup for you' : 'YouTube popups for you';
+  } else {
+    num.textContent = 'Nothing to clear yet';
+    num.style.fontSize = '16px';
+    text.textContent = 'Each YouTube popup it removes is counted here.';
+  }
+}
+
+// The same review prompt content.js shows on YouTube, offered here until it
+// is answered. background.js decides when it is due (reviewPending).
+const askEl = document.getElementById('ask');
+const reviewLinkEl = document.getElementById('review');
+
+api.storage.local
+  .get(['nagsRemoved', 'reviewPending', 'reviewPromptOff', 'reviewSnoozeUntil'])
+  .then((s) => {
+    const n = Number(s.nagsRemoved) || 0;
+    showCount(n);
+    const due =
+      s.reviewPending === true &&
+      s.reviewPromptOff !== true &&
+      Date.now() < (Number(s.reviewSnoozeUntil) || 0);
+    if (due) {
+      document.getElementById('ask-text').textContent =
+        'It has cleared ' + n.toLocaleString() + ' YouTube popups for you. ' +
+        'If it helps, a quick rating helps other people find it.';
+      askEl.hidden = false;
+      reviewLinkEl.hidden = true;
+    }
+  })
+  .catch(() => showCount(0));
+
+function answerReview(answer) {
+  return api.runtime
+    .sendMessage({ type: 'review-answer', answer })
+    .catch(() => {});
+}
+
+document.getElementById('ask-rate').addEventListener('click', async () => {
+  await answerReview('review');
+  api.tabs.create({ url: REVIEW_URL });
+  window.close();
+});
+document.getElementById('ask-later').addEventListener('click', async () => {
+  await answerReview('later');
+  askEl.hidden = true;
+  reviewLinkEl.hidden = false;
+});
+document.getElementById('ask-never').addEventListener('click', async () => {
+  await answerReview('never');
+  askEl.hidden = true;
+  reviewLinkEl.hidden = false;
+});
+
 // The background page badges a tab '!' when content.js sees its video stuck
 // with no media data; explain it here.
 api.tabs
@@ -105,7 +165,9 @@ document.getElementById('donate').addEventListener('click', () => {
   window.close();
 });
 
-document.getElementById('review').addEventListener('click', () => {
+document.getElementById('review').addEventListener('click', async () => {
+  // Someone who chose to review never needs to be asked.
+  await answerReview('review');
   api.tabs.create({ url: REVIEW_URL });
   window.close();
 });

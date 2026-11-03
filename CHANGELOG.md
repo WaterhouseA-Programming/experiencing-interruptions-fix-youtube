@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.9.0
+
+- The toolbar popup now shows how many YouTube popups the add-on has
+  cleared for you. It counts real removals only: a nag taken off the page,
+  or deleted from YouTube's data before it could show (1.8.0 stops most
+  toasts that way, so the 1.7.2 count missed them). Repeat renders of the
+  same nag count once. Existing counts carry over.
+- Optional count on the toolbar icon, off by default. Turn it on in
+  Settings with "Show count on toolbar icon".
+- The 1.7.2 review card now uses the count. It asks first at 5 popups
+  cleared, still only right after one is removed and at least a week after
+  install, and never in the browser session it was installed in or within
+  a week of a missed popup or a stalled video. Buttons are "Rate it",
+  "Later" and "Don't ask again". "Later" (or ignoring it) waits 14 days and
+  20 more popups. Until it is answered, the same prompt also shows in the
+  toolbar popup instead of a second one.
+
 ## 1.8.0
 
 - The "Experiencing interruptions?" toast is now stopped before YouTube

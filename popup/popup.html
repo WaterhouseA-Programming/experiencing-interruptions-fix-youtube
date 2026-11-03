@@ -32,6 +32,23 @@
         background: transparent; margin-top: 6px;
         border: 1px solid rgba(128,128,128,.35); color: inherit;
       }
+      .count {
+        margin: 0 0 12px; padding: 10px; border-radius: 8px; text-align: center;
+        background: rgba(255,0,51,.08); border: 1px solid rgba(255,0,51,.3);
+      }
+      .count b { display: block; font-size: 22px; line-height: 1.1; }
+      .count span { font-size: 12px; }
+      .ask {
+        margin: 0 0 12px; padding: 10px; border-radius: 8px; font-size: 12px;
+        background: rgba(128,128,128,.12); border: 1px solid rgba(128,128,128,.3);
+      }
+      .ask p { margin: 0 0 8px; }
+      .ask .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+      .ask button {
+        width: auto; margin: 0; padding: 5px 10px; font-size: 12px;
+        border-radius: 14px; flex: 0 0 auto;
+      }
+      .ask .rate { background: #ff0033; color: #fff; }
       .stall {
         margin: 0 0 10px; padding: 8px; border-radius: 8px; font-size: 12px;
         background: rgba(217,119,6,.15); border: 1px solid rgba(217,119,6,.5);
@@ -61,6 +78,20 @@
   <body>
     <h1>Experiencing Interruptions Fix</h1>
     <p class="sub">for YouTube</p>
+
+    <p id="count" class="count">
+      <b id="count-num">0</b>
+      <span id="count-text">YouTube popups cleared so far</span>
+    </p>
+
+    <div id="ask" class="ask" hidden>
+      <p id="ask-text">Glad it's working. A quick rating helps other people find it.</p>
+      <div class="btns">
+        <button id="ask-rate" class="rate">Rate it</button>
+        <button id="ask-later" class="ghost">Later</button>
+        <button id="ask-never" class="ghost">Don't ask again</button>
+      </div>
+    </div>
 
     <p id="stall" class="stall" hidden>
       This video isn't loading. That is almost always a second ad blocker

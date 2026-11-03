@@ -217,11 +217,22 @@
       if (key === 'openPopupAction' && isEnforcementPopup(value)) {
         try {
           delete node[key];
+          notifyNagBlocked();
         } catch (_e) {}
         continue;
       }
       stripPopupActions(value, depth + 1);
     }
+  }
+
+  // A nag deleted here never reaches the page, so content.js's DOM sweep
+  // never sees it. Tell content.js so the "popups cleared" count includes it.
+  // content.js sets this hook on the content-script global (an Xray expando,
+  // invisible to YouTube's scripts) and de-duplicates repeat calls. Deferred
+  // so counting never runs inside YouTube's JSON.parse call.
+  function notifyNagBlocked() {
+    const hook = window.eifNagBlocked;
+    if (typeof hook === 'function') setTimeout(hook, 0);
   }
 
   function isEnforcementPopup(action) {

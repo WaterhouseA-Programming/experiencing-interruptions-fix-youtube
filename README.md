@@ -15,7 +15,8 @@ blocking; this clears the nag screen and the playback lock that comes with it.
   when YouTube changes its markup you push a one-line fix to every installed
   copy instead of shipping a new release. Data only, never executed as code.
 - **Options page** (in `about:addons`) and a **toolbar popup** with an on/off
-  toggle and one-click donate.
+  toggle, a count of YouTube popups cleared, and one-click donate. The count
+  can also show on the toolbar icon (off by default, in Settings).
 - No tracking, no analytics. See [PRIVACY.md](PRIVACY.md).
 
 ## Files

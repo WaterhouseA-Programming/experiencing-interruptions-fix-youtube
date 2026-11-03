@@ -456,52 +456,67 @@
     if (Date.now() - stallSince >= STALL_MS) reportStall(true);
   }
 
-  // ---- review card --------------------------------------------------------
+  // ---- popups-cleared count and review card --------------------------------
   //
-  // Ask for a review only from people it is working for: a week after
-  // install, once it has removed a few nags, right after removing one. A
-  // small corner card, shown at most once per REVIEW_SNOOZE_MS, never again
-  // after "Leave a review" or "Never".
+  // Every confirmed removal (a nag taken off the page here, or deleted from
+  // YouTube's data by page-hooks.js before it could show) is reported to the
+  // background page, which keeps the "popups cleared" count and decides
+  // whether to ask for a review. Asking happens only right after a removal,
+  // a week after install, never in the first browser session or soon after
+  // the add-on failed, at count milestones, at most once per 14 days. The
+  // same prompt is shown in the toolbar popup until it is answered.
 
   const REVIEW_URL =
     'https://addons.mozilla.org/firefox/addon/youtube-interruptions-fix/reviews/';
-  const REVIEW_MIN_AGE_MS = 7 * 24 * 3600 * 1000;
-  const REVIEW_MIN_NAGS = 3;
-  const REVIEW_SNOOZE_MS = 14 * 24 * 3600 * 1000;
-  // YouTube re-renders the nag a few times; count one removal per burst.
-  const NAG_COUNT_GAP_MS = 10000;
+  // YouTube re-renders the nag a few times and can send it in more than one
+  // response: count one removal per burst, and one per video.
+  const NAG_COUNT_GAP_MS = 30000;
+  const NAG_SAME_PAGE_MS = 5 * 60 * 1000;
   let lastNagCountedAt = 0;
+  let lastNagCountedPage = '';
   let reviewHost = null;
+
+  function pageKey() {
+    const v = new URLSearchParams(location.search).get('v');
+    return location.pathname + (v ? '?v=' + v : '');
+  }
 
   function onNagRemoved() {
     if (window !== window.top) return;
     const now = Date.now();
+    const key = pageKey();
     if (now - lastNagCountedAt < NAG_COUNT_GAP_MS) return;
+    if (key === lastNagCountedPage && now - lastNagCountedAt < NAG_SAME_PAGE_MS) {
+      return;
+    }
     lastNagCountedAt = now;
-    api.storage.local
-      .get(['nagsRemoved', 'installedAt', 'reviewPromptOff', 'reviewSnoozeUntil'])
-      .then((s) => {
-        const nags = (Number(s.nagsRemoved) || 0) + 1;
-        api.storage.local.set({ nagsRemoved: nags }).catch(() => {});
-        if (
-          s.reviewPromptOff === true ||
-          !s.installedAt ||
-          now - s.installedAt < REVIEW_MIN_AGE_MS ||
-          nags < REVIEW_MIN_NAGS ||
-          now < (Number(s.reviewSnoozeUntil) || 0)
-        ) {
-          return;
-        }
-        // Ignoring the card counts as "Not now".
-        api.storage.local
-          .set({ reviewSnoozeUntil: now + REVIEW_SNOOZE_MS })
-          .catch(() => {});
-        showReviewCard();
+    lastNagCountedPage = key;
+    let sent;
+    try {
+      sent = api.runtime.sendMessage({ type: 'nag-cleared' });
+    } catch (_e) {
+      return;
+    }
+    Promise.resolve(sent)
+      .then((res) => {
+        if (!res || !res.askReview) return;
+        // Never on top of a problem notice: the add-on just failed there.
+        if (stallNoticeHost || missedNagHost || missedNagShownThisPage) return;
+        showReviewCard(res.count);
       })
       .catch(() => {});
   }
 
-  function showReviewCard() {
+  // page-hooks.js calls this when it deletes a nag from YouTube's data.
+  if (window === window.top) window.eifNagBlocked = onNagRemoved;
+
+  function answerReview(answer) {
+    try {
+      api.runtime.sendMessage({ type: 'review-answer', answer }).catch(() => {});
+    } catch (_e) {}
+  }
+
+  function showReviewCard(count) {
     if (reviewHost || stallNoticeHost || missedNagHost || !document.body) return;
     const host = document.createElement('eif-review-card');
     const root = host.attachShadow({ mode: 'closed' });
@@ -526,14 +541,15 @@
     const box = el('div', 'box');
     box.setAttribute('role', 'status');
     box.append(
-      el('p', '', 'Experiencing Interruptions Fix just cleared another ' +
-        'YouTube nag. If it has been useful, a quick review helps others find it.')
+      el('p', '', 'Experiencing Interruptions Fix has cleared ' + count +
+        ' YouTube popups for you. If it helps, a quick rating helps other ' +
+        'people find it.')
     );
     const row = el('div', 'row');
     row.append(
-      button('primary', 'review', 'Leave a review'),
-      button('', 'later', 'Not now'),
-      button('', 'never', 'Never')
+      button('primary', 'review', 'Rate it'),
+      button('', 'later', 'Later'),
+      button('', 'never', "Don't ask again")
     );
     box.append(row);
     root.append(style, box);
@@ -541,9 +557,7 @@
       const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
       if (!act) return;
       if (act === 'review') window.open(REVIEW_URL, '_blank', 'noopener');
-      if (act === 'review' || act === 'never') {
-        api.storage.local.set({ reviewPromptOff: true }).catch(() => {});
-      }
+      answerReview(act);
       hideReviewCard();
     });
     document.body.appendChild(host);
@@ -738,7 +752,11 @@
     api.storage.local
       .get('missedNags')
       .then((s) =>
-        api.storage.local.set({ missedNags: (Number(s.missedNags) || 0) + 1 })
+        api.storage.local.set({
+          missedNags: (Number(s.missedNags) || 0) + 1,
+          // Holds back the review prompt for a while (see background.js).
+          lastFailureAt: Date.now(),
+        })
       )
       .catch(() => {});
     if (!missedNagOff) reportPromise.then(showMissedNagNotice);

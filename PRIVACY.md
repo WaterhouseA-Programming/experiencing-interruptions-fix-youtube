@@ -1,6 +1,6 @@
 # Privacy Policy — Experiencing Interruptions Fix for YouTube
 
-Last updated: 2026-10-26
+Last updated: 2026-11-03
 
 This extension does not collect, store, or transmit any personal data. There is
 no analytics, no tracking, and no account.
@@ -11,8 +11,10 @@ no analytics, no tracking, and no account.
   the ad-blocker enforcement popup and resumes video playback.
 - Stores your settings (enabled on/off, auto-update on/off, rules URL) locally
   in the browser using the `storage` permission. This never leaves your device.
-- Stores the install date and a count of popups removed, locally, to decide
-  when to show a one-time review request. These never leave your device.
+- Stores the install date, a count of popups removed (shown in the toolbar
+  popup), when the browser last started and when the add-on last missed a
+  popup, locally, to decide when to ask for a review. These never leave
+  your device.
 - Stores a local count of popups it detected but could not remove. This
   never leaves your device.
 

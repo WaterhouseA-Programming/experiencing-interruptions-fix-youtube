@@ -4,6 +4,7 @@ const DONATE_URL = 'https://buymeacoffee.com/nimblepanda';
 const els = {
   enabled: document.getElementById('enabled'),
   autoUpdate: document.getElementById('autoUpdate'),
+  showCountBadge: document.getElementById('showCountBadge'),
   rulesUrl: document.getElementById('rulesUrl'),
   updateNow: document.getElementById('updateNow'),
   status: document.getElementById('status'),
@@ -19,8 +20,10 @@ async function load() {
     'lastUpdated',
     'lastUpdateError',
     'remoteRulesVersion',
+    'showCountBadge',
   ]);
   els.enabled.checked = s.enabled !== false;
+  els.showCountBadge.checked = s.showCountBadge === true;
   els.autoUpdate.checked = s.autoUpdate !== false;
   els.rulesUrl.value = s.rulesUrl || '';
   renderStatus(s);
@@ -51,6 +54,9 @@ els.enabled.addEventListener('change', () =>
 );
 els.autoUpdate.addEventListener('change', () =>
   api.storage.local.set({ autoUpdate: els.autoUpdate.checked })
+);
+els.showCountBadge.addEventListener('change', () =>
+  api.storage.local.set({ showCountBadge: els.showCountBadge.checked })
 );
 
 let urlTimer;
