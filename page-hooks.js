@@ -132,7 +132,8 @@
       if (text.includes('"' + k + '"')) return true;
     }
     if (
-      text.includes('"' + TOAST_KEY + '"') &&
+      (text.includes('"' + TOAST_KEY + '"') ||
+        text.includes('"' + SNACKBAR_KEY + '"')) &&
       text.includes(HELP_LINK)
     ) {
       return true;
@@ -146,6 +147,9 @@
   // out why" button linking to YouTube's help centre, in every language.
   const TOAST_KEY = 'notificationActionRenderer';
   const HELP_LINK = 'support.google.com';
+  // YouTube is migrating toasts to snackbars; the same nag can arrive as a
+  // showSnackbarCommand instead of an openPopupAction.
+  const SNACKBAR_KEY = 'showSnackbarCommand';
 
   // Bounded search for a string containing HELP_LINK anywhere in a toast.
   function hasHelpLink(node, depth) {
@@ -214,7 +218,10 @@
         continue;
       }
       if (!value || typeof value !== 'object') continue;
-      if (key === 'openPopupAction' && isEnforcementPopup(value)) {
+      if (
+        (key === 'openPopupAction' && isEnforcementPopup(value)) ||
+        (key === SNACKBAR_KEY && hasHelpLink(value, 0))
+      ) {
         try {
           delete node[key];
           notifyNagBlocked();

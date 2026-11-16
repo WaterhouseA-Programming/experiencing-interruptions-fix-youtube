@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.1
+
+- The "Experiencing interruptions?" toast is caught again where YouTube
+  draws it as a "snackbar". YouTube is moving toasts to a new
+  `snackbar-view-model` element inside `snackbar-container`, with no
+  `yt-notification-action-renderer`, so the on-screen cleanup found nothing
+  to remove. Nag snackbars are now hidden, by text or help-centre link, and
+  a `showSnackbarCommand` carrying the help-centre link is deleted from
+  YouTube's data before it can show. Ordinary snackbars are untouched.
+- `yt-enforcement-message-view-model`, the enforcement message in YouTube's
+  newer component framework, is removed like the older `ytd-` element.
+- Reports now include snackbars and the newer enforcement element. A report
+  from a snackbar variant used to come back with "On-screen
+  dialogs/toasts: 0".
+
 ## 1.9.0
 
 - The toolbar popup now shows how many YouTube popups the add-on has

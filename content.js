@@ -20,8 +20,16 @@
   const BUILT_IN_POPUP = [
     'ytd-enforcement-message-view-model',
     'ytd-enforcement-message-view-model.style-scope',
+    // The same message in YouTube's newer component framework (no "d").
+    'yt-enforcement-message-view-model',
     'ytd-popup-container tp-yt-paper-dialog',
   ];
+
+  // YouTube is moving toasts to "snackbars" (its web_toast_to_snackbar_migration
+  // experiment): the nag then renders as a snackbar-view-model inside
+  // snackbar-container, with no yt-notification-action-renderer at all.
+  const SNACKBAR_SELECTOR = 'snackbar-view-model';
+  const SNACKBAR_HIDDEN_ATTR = 'data-eif-hidden';
 
   const BUILT_IN_BACKDROP = [
     'tp-yt-iron-overlay-backdrop',
@@ -169,6 +177,7 @@
     // attribute, recognised by its visible text. Remove only matches so
     // ordinary YouTube toasts ("Added to queue", etc.) are left alone.
     if (removeToastNags()) removedSomething = true;
+    if (hideSnackbarNags()) removedSomething = true;
 
     // Remove the dark backdrop, but only alongside an enforcement popup.
     // Backdrops also sit behind ordinary dialogs (Share, Save to playlist,
@@ -199,7 +208,7 @@
   // ordinary toasts ("Saved to Watch later" / "Change") never do. This
   // catches the toast in any interface language, where the text match fails.
   function hasSupportLink(el) {
-    if (!isNotificationRenderer(el)) return false;
+    if (!isNotificationRenderer(el) && !isSnackbar(el)) return false;
     try {
       return !!el.querySelector('a[href*="support.google.com"]');
     } catch (_e) {
@@ -216,6 +225,33 @@
       }
     });
     return removed;
+  }
+
+  function isSnackbar(el) {
+    return !!(el && el.matches && el.matches(SNACKBAR_SELECTOR));
+  }
+
+  // Snackbars are drawn by YouTube's reactive framework, which keeps hold of
+  // its nodes and may reuse them, so a nag snackbar is hidden rather than
+  // removed, and un-hidden as soon as it no longer carries the nag (so a
+  // reused node can show "Saved to Watch later" later). Returns true only
+  // when a nag was newly hidden: a snackbar that stays hidden must not
+  // re-trigger the playback guard on every sweep.
+  function hideSnackbarNags() {
+    let hidden = false;
+    querySafe(SNACKBAR_SELECTOR).forEach((el) => {
+      const marked = el.hasAttribute(SNACKBAR_HIDDEN_ATTR);
+      if (hasEnforcementText(el)) {
+        if (marked) return;
+        el.setAttribute(SNACKBAR_HIDDEN_ATTR, '');
+        el.style.setProperty('display', 'none', 'important');
+        hidden = true;
+      } else if (marked) {
+        el.removeAttribute(SNACKBAR_HIDDEN_ATTR);
+        el.style.removeProperty('display');
+      }
+    });
+    return hidden;
   }
 
   // querySelectorAll that never throws on a bad remote selector.
@@ -579,7 +615,11 @@
 
   const REPORT_SELECTORS = [
     'ytd-enforcement-message-view-model',
+    'yt-enforcement-message-view-model',
     'yt-notification-action-renderer',
+    // Container first: a snackbar inside it is then skipped as a duplicate.
+    'snackbar-container',
+    'snackbar-view-model',
     'tp-yt-paper-toast',
     'tp-yt-paper-dialog',
     'tp-yt-iron-overlay-backdrop',
@@ -678,6 +718,7 @@
   const ISSUE_URL_MAX = 7000;
   const UNHANDLED_SELECTORS = [
     'yt-notification-action-renderer',
+    'snackbar-view-model',
     'tp-yt-paper-dialog',
     '[role="dialog"]',
     '[role="alertdialog"]',
