@@ -5,6 +5,7 @@ const els = {
   enabled: document.getElementById('enabled'),
   autoUpdate: document.getElementById('autoUpdate'),
   showCountBadge: document.getElementById('showCountBadge'),
+  dataLayer: document.getElementById('dataLayer'),
   rulesUrl: document.getElementById('rulesUrl'),
   updateNow: document.getElementById('updateNow'),
   status: document.getElementById('status'),
@@ -21,9 +22,11 @@ async function load() {
     'lastUpdateError',
     'remoteRulesVersion',
     'showCountBadge',
+    'dataLayer',
   ]);
   els.enabled.checked = s.enabled !== false;
   els.showCountBadge.checked = s.showCountBadge === true;
+  els.dataLayer.checked = s.dataLayer !== false;
   els.autoUpdate.checked = s.autoUpdate !== false;
   els.rulesUrl.value = s.rulesUrl || '';
   renderStatus(s);
@@ -57,6 +60,9 @@ els.autoUpdate.addEventListener('change', () =>
 );
 els.showCountBadge.addEventListener('change', () =>
   api.storage.local.set({ showCountBadge: els.showCountBadge.checked })
+);
+els.dataLayer.addEventListener('change', () =>
+  api.storage.local.set({ dataLayer: els.dataLayer.checked })
 );
 
 let urlTimer;

@@ -1,6 +1,6 @@
 # Privacy Policy — Experiencing Interruptions Fix for YouTube
 
-Last updated: 2026-11-03
+Last updated: 2026-11-17
 
 This extension does not collect, store, or transmit any personal data. There is
 no analytics, no tracking, and no account.
@@ -17,6 +17,13 @@ no analytics, no tracking, and no account.
   your device.
 - Stores a local count of popups it detected but could not remove. This
   never leaves your device.
+- Keeps a local diagnostic log of its last 400 events: popups removed and
+  how, how long videos took to start, stalls, rules updates and errors,
+  with times. For a popup it could not remove, the log holds up to 1,500
+  characters of that popup's HTML. It contains no web addresses, video IDs
+  or account details. It never leaves your device. "Copy diagnostic log"
+  in the toolbar popup copies it to your clipboard only when you click it,
+  and "Clear" deletes it.
 
 ## Problem reports
 

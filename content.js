@@ -14,6 +14,92 @@
   'use strict';
 
   const api = typeof browser !== 'undefined' ? browser : chrome;
+  const isTop = window === window.top;
+
+  // ---- diagnostic log -----------------------------------------------------
+  //
+  // Events go to background.js, which keeps the last few hundred on this
+  // device for the toolbar popup's "Copy diagnostic log". The same event with
+  // the same details is sent at most once per 15 s, since YouTube re-renders
+  // things many times. Never a URL or video ID.
+
+  const diagSeen = new Map();
+
+  function diag(e, d) {
+    const data = Object.assign({}, d || {});
+    if (!isTop) data.frame = 'sub';
+    const key = e + JSON.stringify(data);
+    const now = Date.now();
+    if (now - (diagSeen.get(key) || 0) < 15000) return;
+    diagSeen.set(key, now);
+    if (diagSeen.size > 200) diagSeen.clear();
+    try {
+      api.runtime.sendMessage({ type: 'diag', e, d: data }).catch(() => {});
+    } catch (_e) {}
+  }
+
+  // page-hooks.js logs through this (content-script global, not the page's).
+  window.eifDiag = diag;
+
+  function pageType() {
+    const p = location.pathname;
+    if (/^\/watch/.test(p)) return 'watch';
+    if (/^\/shorts\//.test(p)) return 'shorts';
+    if (/^\/embed\//.test(p)) return 'embed';
+    return 'other';
+  }
+
+  // ---- the main player ----------------------------------------------------
+  //
+  // Always the watch/shorts player's own <video>. A bare 'video' selector can
+  // pick up the hover-preview player YouTube keeps in the page after the
+  // home feed, which sits at readyState 0 and caused false stall notices.
+
+  function moviePlayer() {
+    return document.getElementById('movie_player');
+  }
+
+  function mainVideo() {
+    const p = moviePlayer();
+    if (p) {
+      const v =
+        p.querySelector('video.html5-main-video') || p.querySelector('video');
+      if (v) return v;
+    }
+    // Shorts and embeds can use a different container.
+    return document.querySelector(
+      '#shorts-player video, ytd-player video.html5-main-video, .html5-video-player video'
+    );
+  }
+
+  function isMainVideo(node) {
+    return !!node && node.tagName === 'VIDEO' && node === mainVideo();
+  }
+
+  // YouTube's player API: -1 unstarted, 0 ended, 1 playing, 2 paused,
+  // 3 buffering, 5 cued. null when the API isn't there.
+  function playerState() {
+    const p = moviePlayer();
+    if (!p) return null;
+    try {
+      const w = p.wrappedJSObject || p;
+      if (typeof w.getPlayerState === 'function') {
+        const s = Number(w.getPlayerState());
+        return isFinite(s) ? s : null;
+      }
+    } catch (_e) {}
+    return null;
+  }
+
+  function visibleIn(root, sel) {
+    if (!root) return false;
+    try {
+      const n = root.querySelector(sel);
+      return !!(n && n.getClientRects().length && getComputedStyle(n).display !== 'none');
+    } catch (_e) {
+      return false;
+    }
+  }
 
   // ---- built-in defaults --------------------------------------------------
 
@@ -138,18 +224,27 @@
 
   // ---- popup removal ------------------------------------------------------
 
+  const ENFORCEMENT_TAGS =
+    'ytd-enforcement-message-view-model, yt-enforcement-message-view-model';
+
+  // How the last sweep removed something, for the diagnostic log.
+  let lastRemovalHow = '';
+
   function removeEnforcementPopups() {
     if (!enabled) return false;
     let removedSomething = false;
+    lastRemovalHow = '';
 
-    // Take out the enforcement message and whatever dialog owns it.
-    querySafe('ytd-enforcement-message-view-model').forEach((el) => {
+    // Take out the enforcement message and whatever dialog owns it (either
+    // framework's element: removing only the newer one left its dialog open).
+    querySafe(ENFORCEMENT_TAGS).forEach((el) => {
       const dialog =
         el.closest('tp-yt-paper-dialog') ||
         el.closest('ytd-popup-container') ||
         el;
       dialog.remove();
       removedSomething = true;
+      lastRemovalHow = 'dialog';
     });
 
     // Any other configured popup containers.
@@ -163,12 +258,13 @@
         // remote rule. We only remove dialogs, never the whole page.
         if (
           el.querySelector &&
-          (el.matches('ytd-enforcement-message-view-model') ||
-            el.querySelector('ytd-enforcement-message-view-model') ||
+          (el.matches(ENFORCEMENT_TAGS) ||
+            el.querySelector(ENFORCEMENT_TAGS) ||
             sel !== 'ytd-popup-container tp-yt-paper-dialog')
         ) {
           el.remove();
           removedSomething = true;
+          if (!lastRemovalHow) lastRemovalHow = 'selector:' + sel;
         }
       });
     });
@@ -176,8 +272,14 @@
     // Toast-style nag: a generic notification renderer with no distinguishing
     // attribute, recognised by its visible text. Remove only matches so
     // ordinary YouTube toasts ("Added to queue", etc.) are left alone.
-    if (removeToastNags()) removedSomething = true;
-    if (hideSnackbarNags()) removedSomething = true;
+    if (removeToastNags()) {
+      removedSomething = true;
+      if (!lastRemovalHow) lastRemovalHow = 'toast';
+    }
+    if (hideSnackbarNags()) {
+      removedSomething = true;
+      if (!lastRemovalHow) lastRemovalHow = 'snackbar';
+    }
 
     // Remove the dark backdrop, but only alongside an enforcement popup.
     // Backdrops also sit behind ordinary dialogs (Share, Save to playlist,
@@ -263,19 +365,47 @@
     }
   }
 
+  // Lift the scroll lock the popup left. Until 1.10.0 this forced
+  // overflow:auto !important on the page for the rest of the session, which
+  // could break fullscreen and theater layout; now it only clears the lock.
   function unlockPage() {
     [document.documentElement, document.body].forEach((node) => {
       if (!node) return;
       node.removeAttribute('scroll-locked');
-      node.style.setProperty('overflow', 'auto', 'important');
+      if (node.style.overflow === 'hidden') node.style.removeProperty('overflow');
     });
   }
 
+  // ---- user intent ----------------------------------------------------------
+  //
+  // A pause within USER_PAUSE_MS of a click, tap or key press is the user's.
+  // The add-on never restarts a video the user paused.
+
+  const USER_PAUSE_MS = 1500;
+  let lastUserInputAt = 0;
+  let userPaused = false;
+
+  function noteUserInput(e) {
+    if (e.isTrusted) lastUserInputAt = Date.now();
+  }
+  ['pointerdown', 'keydown', 'touchstart'].forEach((t) =>
+    document.addEventListener(t, noteUserInput, true)
+  );
+
+  function userJustActed() {
+    return Date.now() - lastUserInputAt < USER_PAUSE_MS;
+  }
+
   function resumePlayback() {
+    if (userPaused) return;
+    const video = mainVideo();
+    // Already playing (or nothing to play): calling playVideo() again can
+    // restart YouTube's state machine for no reason.
+    if (video && !video.paused) return;
     // Prefer the player API: it restores YouTube's own state, not just the
     // <video> element. The player's methods live in the page compartment, so
     // reach them through wrappedJSObject (Firefox Xray).
-    const player = document.getElementById('movie_player');
+    const player = moviePlayer();
     if (player) {
       try {
         const p = player.wrappedJSObject || player;
@@ -285,7 +415,6 @@
         }
       } catch (_e) {}
     }
-    const video = document.querySelector('video.html5-main-video, video');
     if (video && video.paused) {
       const p = video.play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
@@ -294,10 +423,13 @@
 
   // YouTube pauses the video shortly AFTER showing the popup, so a single
   // play() right at removal loses the race. For a short window, retry and
-  // counter any pause YouTube forces.
+  // counter any pause YouTube forces. If the user had already paused the
+  // video, it stays paused.
   let pauseGuardUntil = 0;
 
   function guardAgainstPause() {
+    const video = mainVideo();
+    if (!video || userPaused) return;
     pauseGuardUntil = Date.now() + 2000;
     [0, 250, 750, 1500].forEach((ms) => setTimeout(resumePlayback, ms));
   }
@@ -306,8 +438,21 @@
   document.addEventListener(
     'pause',
     (e) => {
+      if (!isMainVideo(e.target)) return;
+      if (userJustActed()) {
+        userPaused = true;
+        pauseGuardUntil = 0;
+        return;
+      }
       if (!enabled || Date.now() > pauseGuardUntil) return;
-      if (e.target && e.target.tagName === 'VIDEO') resumePlayback();
+      resumePlayback();
+    },
+    true
+  );
+  document.addEventListener(
+    'play',
+    (e) => {
+      if (isMainVideo(e.target)) userPaused = false;
     },
     true
   );
@@ -317,7 +462,10 @@
   const kick = () => {
     // Deferred: the review section's state below isn't initialised yet when
     // the first sweep runs during startup.
-    if (removeEnforcementPopups()) setTimeout(onNagRemoved, 0);
+    if (removeEnforcementPopups()) {
+      const how = lastRemovalHow || 'dom';
+      setTimeout(() => onNagRemoved(how), 0);
+    }
   };
 
   // YouTube's DOM churns constantly and each sweep runs several
@@ -356,6 +504,14 @@
   setInterval(kick, 1000);
   window.addEventListener('yt-navigate-finish', kick, true);
   document.addEventListener('yt-navigate-finish', kick, true);
+  // A new video starts with no user pause on record.
+  window.addEventListener(
+    'yt-navigate-start',
+    () => {
+      userPaused = false;
+    },
+    true
+  );
 
   // ---- stall detection ----------------------------------------------------
   //
@@ -365,17 +521,42 @@
   // mysterious "this extension broke YouTube" into an actionable hint: the
   // background page badges the toolbar icon and the popup explains.
   //
-  // A stall is a visible watch/shorts page whose video has had no current
-  // frame (readyState < HAVE_CURRENT_DATA) for STALL_MS. A video the user
-  // paused after it loaded keeps readyState >= 2, so it never counts.
+  // A stall is a visible watch/shorts page whose MAIN video has been asked
+  // to play (not paused) yet has had no current frame (readyState <
+  // HAVE_CURRENT_DATA) for STALL_MS. Not counted: a video waiting for a
+  // click (autoplay off or blocked: it stays paused), a cued video, a player
+  // error ("Video unavailable"), an upcoming premiere or live stream (the
+  // offline slate), and the hover-preview player.
+  //
+  // YouTube itself also holds back playback for some ad-block users for
+  // several seconds, so the threshold is well above that delay.
 
-  const STALL_MS = 15000;
+  const STALL_MS = 25000;
   let stallSince = 0;
   let stallReported = false;
+  let stallStartedAt = 0;
+
+  function stallDetails() {
+    const v = mainVideo();
+    return {
+      page: pageType(),
+      state: playerState(),
+      ready: v ? v.readyState : -1,
+      net: v ? v.networkState : -1,
+      ad: !!(moviePlayer() && moviePlayer().classList.contains('ad-showing')),
+    };
+  }
 
   function reportStall(stalled) {
     if (stalled === stallReported) return;
     stallReported = stalled;
+    if (stalled) {
+      stallStartedAt = stallSince || Date.now();
+      diag('stall', stallDetails());
+    } else if (stallStartedAt) {
+      diag('stall-end', { secs: (Date.now() - stallStartedAt) / 1000 });
+      stallStartedAt = 0;
+    }
     try {
       api.runtime.sendMessage({ type: 'stall', stalled }).catch(() => {});
     } catch (_e) {}
@@ -425,14 +606,16 @@
     const box = el('div', 'box');
     box.setAttribute('role', 'alert');
     box.append(
-      el('p', 'title', 'Video not loading?'),
-      el('p', '', 'This is almost always caused by running a second ad blocker ' +
-        '(Ghostery, AdBlock Plus, AdGuard, Brave Shields) alongside uBlock ' +
-        'Origin. They fight over YouTube and the video never starts.'),
-      el('p', '', 'Fix: pause the other blocker on youtube.com, keep uBlock ' +
-        'Origin, then reload.'),
-      el('p', 'who', 'From Experiencing Interruptions Fix. This add-on does ' +
-        'not block video. To check, turn it off from its toolbar icon and reload.')
+      el('p', 'title', 'Video still not loading?'),
+      el('p', '', 'A reload usually fixes it. YouTube sometimes holds back ' +
+        'playback for people using an ad blocker, and the wait can be long.'),
+      el('p', '', 'If it happens a lot: a second ad blocker (Ghostery, ' +
+        'AdBlock Plus, AdGuard, Brave Shields) running alongside uBlock ' +
+        'Origin can stop videos loading at all. Pausing it on youtube.com ' +
+        'helps. Updating uBlock Origin\'s filter lists can help too.'),
+      el('p', 'who', 'From Experiencing Interruptions Fix. To rule this ' +
+        'add-on out, turn it off from its toolbar icon and reload. Its ' +
+        'toolbar menu can copy a diagnostic log.')
     );
     const row = el('div', 'row');
     row.append(
@@ -476,13 +659,23 @@
   }
 
   function checkStall() {
-    const video = document.querySelector('video.html5-main-video, video');
+    const video = mainVideo();
+    const player = moviePlayer();
+    const state = playerState();
     const loading =
+      enabled &&
       !!video &&
       document.visibilityState === 'visible' &&
       /^\/(watch|shorts\/)/.test(location.pathname) &&
       video.readyState < 2 &&
-      !video.ended;
+      !video.paused &&
+      !video.ended &&
+      !video.error &&
+      state !== 0 &&
+      state !== 2 &&
+      state !== 5 &&
+      !visibleIn(player, '.ytp-error') &&
+      !visibleIn(player, '.ytp-offline-slate');
     if (!loading) {
       stallSince = 0;
       reportStall(false);
@@ -490,6 +683,50 @@
     }
     if (!stallSince) stallSince = Date.now();
     if (Date.now() - stallSince >= STALL_MS) reportStall(true);
+  }
+
+  // ---- video load timing (diagnostic log) -----------------------------------
+  //
+  // Time from the start of a navigation to the main video's first frame, plus
+  // how much time page-hooks.js spent pruning YouTube's data on the way. This
+  // is what tells "YouTube is slow" apart from "the add-on is slow".
+
+  let loadStart = 0;
+  let loadKind = '';
+  let loadPending = false;
+
+  function startLoadTimer(kind, at) {
+    loadStart = at;
+    loadKind = kind;
+    loadPending = /^\/(watch|shorts\/)/.test(location.pathname);
+  }
+
+  function onFirstFrame(e) {
+    if (!loadPending || !isMainVideo(e.target)) return;
+    loadPending = false;
+    const ms = Date.now() - loadStart;
+    if (ms < 0 || ms > 180000) return;
+    const s = window.eifPruneStats || {};
+    const player = moviePlayer();
+    diag('load', {
+      ms,
+      page: pageType(),
+      kind: loadKind,
+      hidden: document.visibilityState !== 'visible',
+      ad: !!(player && player.classList.contains('ad-showing')),
+      prunes: s.prunes || 0,
+      walks: s.walks || 0,
+      pruneMs: s.pruneMs || 0,
+    });
+  }
+
+  function resetPruneStats() {
+    const s = window.eifPruneStats;
+    if (s) {
+      s.prunes = 0;
+      s.walks = 0;
+      s.pruneMs = 0;
+    }
   }
 
   // ---- popups-cleared count and review card --------------------------------
@@ -517,7 +754,8 @@
     return location.pathname + (v ? '?v=' + v : '');
   }
 
-  function onNagRemoved() {
+  function onNagRemoved(how) {
+    diag('nag', { how: typeof how === 'string' ? how : 'dom', page: pageType() });
     if (window !== window.top) return;
     const now = Date.now();
     const key = pageKey();
@@ -544,7 +782,7 @@
   }
 
   // page-hooks.js calls this when it deletes a nag from YouTube's data.
-  if (window === window.top) window.eifNagBlocked = onNagRemoved;
+  window.eifNagBlocked = onNagRemoved;
 
   function answerReview(answer) {
     try {
@@ -658,12 +896,8 @@
         elements.push({ node, sel });
       }
     }
-    const video = document.querySelector('video.html5-main-video, video');
-    const page = /^\/watch/.test(location.pathname)
-      ? 'watch'
-      : /^\/shorts\//.test(location.pathname)
-      ? 'shorts'
-      : 'other';
+    const video = mainVideo();
+    const page = pageType();
     const lines = [
       'Extension: ' + api.runtime.getManifest().version +
         (enabled ? '' : ' (fix turned OFF)'),
@@ -673,7 +907,8 @@
       'Page: ' + page,
       'Video: ' +
         (video
-          ? (video.paused ? 'paused' : 'playing') + ', readyState ' + video.readyState
+          ? (video.paused ? 'paused' : 'playing') + ', readyState ' +
+            video.readyState + ', player state ' + playerState()
           : 'none'),
       'Scroll locked: ' +
         (document.documentElement.hasAttribute('scroll-locked') ||
@@ -710,7 +945,6 @@
   // the video and offer, on the page, to report what got through, since
   // affected users rarely find the toolbar popup's Report button.
 
-  const USER_PAUSE_MS = 1500;
   const OVERLAY_WAIT_MS = 3000;
   const ISSUE_URL =
     'https://github.com/WaterhouseA-Programming/experiencing-interruptions-fix-youtube/issues/new';
@@ -724,7 +958,6 @@
     '[role="alertdialog"]',
   ];
 
-  let lastUserInputAt = 0;
   let missedNagChecking = false;
   let missedNagShownThisPage = false;
   let missedNagOff = false;
@@ -736,10 +969,6 @@
       missedNagOff = s.missedNagNoticeOff === true;
     })
     .catch(() => {});
-
-  function noteUserInput(e) {
-    if (e.isTrusted) lastUserInputAt = Date.now();
-  }
 
   // Overlays the sweep did not remove. "Continue watching?" is YouTube's own
   // idle check: it pauses on purpose and is left alone.
@@ -762,7 +991,8 @@
   function onVideoPause(e) {
     if (!enabled || missedNagChecking || missedNagShownThisPage) return;
     const video = e.target;
-    if (!video || video.tagName !== 'VIDEO' || video.ended) return;
+    // Main player only: hover previews pause on their own all the time.
+    if (!isMainVideo(video) || video.ended) return;
     if (!/^\/(watch|shorts\/)/.test(location.pathname)) return;
     if (document.visibilityState !== 'visible') return;
     if (Date.now() - lastUserInputAt < USER_PAUSE_MS) return;
@@ -777,7 +1007,7 @@
       const overlay = findUnhandledOverlay();
       if (overlay) {
         missedNagChecking = false;
-        onMissedNag();
+        onMissedNag(overlay);
         return;
       }
       if (Date.now() - started < OVERLAY_WAIT_MS) setTimeout(check, 250);
@@ -785,8 +1015,17 @@
     })();
   }
 
-  function onMissedNag() {
+  function onMissedNag(overlay) {
     missedNagShownThisPage = true;
+    let html = '';
+    try {
+      html = compactHtml(overlay).slice(0, 1500);
+    } catch (_e) {}
+    diag('missed-nag', {
+      page: pageType(),
+      tag: overlay && overlay.tagName ? overlay.tagName.toLowerCase() : '?',
+      html,
+    });
     // Snapshot now: the overlay may be gone by the time the user clicks.
     const reportPromise = fullReport().catch(() => '');
     guardAgainstPause();
@@ -835,7 +1074,8 @@
     box.append(el('p', 'title', 'A new YouTube popup got through'), msg);
     const row = el('div', 'row');
     row.append(
-      button('primary', 'report', 'Report it'),
+      button('primary', 'report', 'Report on GitHub'),
+      button('', 'copy', 'Copy report'),
       button('', 'dismiss', 'Dismiss'),
       button('', 'never', "Don't show again")
     );
@@ -844,6 +1084,20 @@
     root.addEventListener('click', (e) => {
       const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
       if (!act) return;
+      if (act === 'copy') {
+        navigator.clipboard.writeText(report).then(
+          () => {
+            msg.textContent = 'Report copied. Paste it wherever you are ' +
+              'getting help. It is also kept in the diagnostic log in the ' +
+              'add-on\'s toolbar menu.';
+          },
+          () => {
+            msg.textContent = 'Could not copy. Use "Copy diagnostic log" ' +
+              'in the add-on\'s toolbar menu instead.';
+          }
+        );
+        return;
+      }
       if (act === 'report') {
         openIssue(report).then((note) => {
           if (note) msg.textContent = note;
@@ -904,10 +1158,28 @@
       return fullReport().then((report) => ({ report }));
     });
 
-    ['pointerdown', 'keydown', 'touchstart'].forEach((t) =>
-      document.addEventListener(t, noteUserInput, true)
-    );
     document.addEventListener('pause', onVideoPause, true);
+
+    startLoadTimer('initial', Math.round(performance.timeOrigin));
+    document.addEventListener('loadeddata', onFirstFrame, true);
+    document.addEventListener('playing', onFirstFrame, true);
+    window.addEventListener(
+      'yt-navigate-start',
+      () => {
+        resetPruneStats();
+        startLoadTimer('spa', Date.now());
+      },
+      true
+    );
+    // A navigation can land on a page whose video was already loading.
+    window.addEventListener(
+      'yt-navigate-finish',
+      () => {
+        if (!/^\/(watch|shorts\/)/.test(location.pathname)) loadPending = false;
+        else if (!loadPending && !loadStart) startLoadTimer('spa', Date.now());
+      },
+      true
+    );
     window.addEventListener(
       'yt-navigate-finish',
       () => {

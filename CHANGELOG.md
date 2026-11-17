@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.10.0
+
+Reliability release.
+
+- Diagnostic log. The add-on now keeps a log of what it did on this device:
+  popups removed and how, how long each video took to show its first
+  frame, stalls, missed popups, rules updates and errors. "Copy diagnostic
+  log" in the toolbar menu copies it as text to paste wherever you are
+  getting help. It holds the last 400 events, has no web addresses or video
+  IDs, and never leaves the device. "Clear" empties it.
+- Fewer false "video not loading" notices. The stall check could read
+  YouTube's hover-preview player instead of the real one and flag a stall
+  that wasn't there. It now watches only the main player, and only once the
+  video has been asked to play. A video waiting for a click, a player error,
+  an upcoming premiere or live stream no longer counts. It waits 25 seconds
+  instead of 15.
+- The notice no longer says a second ad blocker is "almost always" the
+  cause. It suggests a reload first and says that YouTube sometimes holds
+  back playback for ad-block users.
+- Faster video loads. Every YouTube player response was searched in full
+  for popups while YouTube waited for it. Now the full search runs only
+  when the response could hold a popup. The `setTimeout` wrapper is no
+  longer installed unless the remote rules switch the timer squasher on
+  (off since 1.6.0).
+- New remote switch `pruneAdKeys` lets the ad-field pruning be turned off
+  for everyone without a new release.
+- A YouTube snackbar is now deleted from YouTube's data only when it has
+  both the help-centre link and the nag's wording. 1.9.1 deleted any
+  snackbar with a help-centre link. Nag snackbars in other languages are
+  still hidden on screen.
+- New setting "Stop popups before they load". Turn it off to check whether
+  videos load faster without the data layer. Popups are then removed after
+  they appear.
+- The add-on no longer restarts a video you paused yourself when it clears
+  a popup.
+- After clearing a popup, the add-on no longer forces the page to scroll
+  for the rest of the session. That could upset fullscreen and theater
+  layout.
+- The "new popup got through" check ignores hover previews pausing.
+- `yt-enforcement-message-view-model` is now removed along with its
+  dialog, not on its own.
+- The missed-popup notice has a "Copy report" button alongside "Report on
+  GitHub".
+
 ## 1.9.1
 
 - The "Experiencing interruptions?" toast is caught again where YouTube

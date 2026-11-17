@@ -27,7 +27,10 @@ const DEFAULT_SETTINGS = {
   remoteAdKeys: [],
   remotePopupText: [],
   remoteMinTimeoutMs: 0,
+  remotePruneAdKeys: true,
   remoteRulesVersion: 0,
+  // Options: page-hooks.js (data layer) on/off, for ruling the add-on out.
+  dataLayer: true,
   lastUpdated: null,
   lastUpdateError: null,
   rulesRetryStep: 0,
@@ -54,6 +57,9 @@ api.runtime.onInstalled.addListener(async (details) => {
   if (!installedAt) await api.storage.local.set({ installedAt: Date.now() });
 
   refreshBadge();
+  diagAppend(details.reason, {
+    from: details.previousVersion || undefined,
+  });
 
   if (details.reason === 'install') {
     // Open a friendly welcome page (not the payment link directly).
@@ -80,6 +86,122 @@ api.runtime.onMessage.addListener((msg, sender) => {
   });
   if (msg.stalled) api.storage.local.set({ lastFailureAt: Date.now() });
 });
+
+// ---- diagnostic log -------------------------------------------------------
+//
+// A local ring buffer of what the add-on did and saw: nags removed and how,
+// video load times, stalls, missed nags, rules updates and hook errors. It
+// never leaves the device; the toolbar popup copies it as text for the user
+// to paste wherever they are getting help. No URLs or video IDs go in it.
+
+const DIAG_KEY = 'diagLog';
+const DIAG_MAX = 400;
+let diagQueue = Promise.resolve();
+
+function cleanDiagData(d) {
+  const out = {};
+  if (!d || typeof d !== 'object') return out;
+  let n = 0;
+  for (const k of Object.keys(d)) {
+    if (n >= 16 || !/^[\w-]{1,32}$/.test(k)) continue;
+    const v = d[k];
+    if (typeof v === 'number' && isFinite(v)) out[k] = Math.round(v * 10) / 10;
+    else if (typeof v === 'boolean') out[k] = v;
+    else if (typeof v === 'string') out[k] = v.slice(0, 2000);
+    else continue;
+    n++;
+  }
+  return out;
+}
+
+function diagAppend(e, d) {
+  if (typeof e !== 'string' || !/^[\w-]{1,40}$/.test(e)) return diagQueue;
+  const entry = { t: Date.now(), e, d: cleanDiagData(d) };
+  diagQueue = diagQueue
+    .then(async () => {
+      const s = await api.storage.local.get(DIAG_KEY);
+      const list = Array.isArray(s[DIAG_KEY]) ? s[DIAG_KEY] : [];
+      list.push(entry);
+      if (list.length > DIAG_MAX) list.splice(0, list.length - DIAG_MAX);
+      await api.storage.local.set({ [DIAG_KEY]: list });
+    })
+    .catch(() => {});
+  return diagQueue;
+}
+
+function pad(n, w) {
+  return String(n).padStart(w || 2, '0');
+}
+
+function stamp(t) {
+  const d = new Date(t);
+  return (
+    d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+    ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' +
+    pad(d.getSeconds()) + '.' + pad(d.getMilliseconds(), 3)
+  );
+}
+
+function fmtData(d) {
+  return Object.keys(d || {})
+    .map((k) => {
+      const v = d[k];
+      const s = String(v);
+      return k + '=' + (/[\s"]/.test(s) ? JSON.stringify(s) : s);
+    })
+    .join(' ');
+}
+
+async function buildDiagText() {
+  await diagQueue;
+  const s = await api.storage.local.get(null);
+  const log = Array.isArray(s[DIAG_KEY]) ? s[DIAG_KEY] : [];
+  let browserLine = navigator.userAgent;
+  try {
+    const b = await api.runtime.getBrowserInfo();
+    const p = await api.runtime.getPlatformInfo();
+    browserLine = b.name + ' ' + b.version + ' (' + p.os + ')';
+  } catch (_e) {}
+  let privateLine = '?';
+  try {
+    privateLine = (await api.extension.isAllowedIncognitoAccess())
+      ? 'allowed'
+      : 'not allowed';
+  } catch (_e) {}
+  const onOff = (v) => (v === false ? 'off' : 'on');
+  const loads = log
+    .filter((x) => x.e === 'load' && typeof x.d.ms === 'number')
+    .map((x) => x.d.ms)
+    .sort((a, b) => a - b);
+  const median = loads.length ? loads[Math.floor(loads.length / 2)] : 0;
+  const lines = [
+    'Experiencing Interruptions Fix diagnostic log',
+    'Generated: ' + stamp(Date.now()),
+    'Extension: ' + api.runtime.getManifest().version +
+      ' | ' + browserLine + ' | private windows: ' + privateLine,
+    'Fix: ' + onOff(s.enabled) + ' | data layer: ' + onOff(s.dataLayer) +
+      ' | auto-update: ' + onOff(s.autoUpdate),
+    'Rules: v' + (s.remoteRulesVersion || 0) +
+      ' | updated ' + (s.lastUpdated || 'never') +
+      ' | last error: ' + (s.lastUpdateError || 'none') +
+      ' | pruneAdKeys ' + onOff(s.remotePruneAdKeys) +
+      ' | minTimeoutMs ' + (Number(s.remoteMinTimeoutMs) || 0),
+    'Counts: popups cleared ' + (Number(s.nagsRemoved) || 0) +
+      ' | missed ' + (Number(s.missedNags) || 0),
+    'Video loads logged: ' + loads.length +
+      (loads.length
+        ? ' | median ' + (median / 1000).toFixed(1) + 's' +
+          ' | slowest ' + (loads[loads.length - 1] / 1000).toFixed(1) + 's' +
+          ' | over 10s: ' + loads.filter((m) => m >= 10000).length
+        : ''),
+    '',
+    '--- events, oldest first (' + log.length + ' of max ' + DIAG_MAX + ') ---',
+  ];
+  for (const x of log) {
+    lines.push(stamp(x.t) + '  ' + x.e + (x.d ? '  ' + fmtData(x.d) : ''));
+  }
+  return lines.join('\n');
+}
 
 api.runtime.onStartup?.addListener(() => {
   // Marks the start of this browser session: the review prompt is never
@@ -165,6 +287,15 @@ api.runtime.onMessage.addListener((msg) => {
   if (!msg) return;
   if (msg.type === 'nag-cleared') return onNagCleared();
   if (msg.type === 'review-answer') return onReviewAnswer(msg.answer);
+  if (msg.type === 'diag') {
+    diagAppend(msg.e, msg.d);
+    return;
+  }
+  if (msg.type === 'get-diag') return buildDiagText().then((text) => ({ text }));
+  if (msg.type === 'clear-diag') {
+    diagQueue = diagQueue.then(() => api.storage.local.set({ [DIAG_KEY]: [] }));
+    return diagQueue.then(() => ({ ok: true }));
+  }
 });
 
 // Optional count on the toolbar icon, off by default (Settings).
@@ -251,6 +382,8 @@ async function updateRules() {
     const adKeys = sanitizeKeyList(data.adKeys);
     const text = sanitizeTextList(data.popupText);
     const minTimeoutMs = sanitizeTimeout(data.minTimeoutMs);
+    // Remote kill switch for the ad-field pruning layer (default on).
+    const pruneAdKeys = data.pruneAdKeys !== false;
     const version = Number(data.version) || 0;
 
     await api.storage.local.set({
@@ -260,16 +393,19 @@ async function updateRules() {
       remoteAdKeys: adKeys,
       remotePopupText: text,
       remoteMinTimeoutMs: minTimeoutMs,
+      remotePruneAdKeys: pruneAdKeys,
       remoteRulesVersion: version,
       lastUpdated: new Date().toISOString(),
       lastUpdateError: null,
       rulesRetryStep: 0,
     });
     api.alarms.clear(RETRY_ALARM);
+    diagAppend('rules-ok', { v: version });
 
     return { version, popupCount: popup.length, backdropCount: backdrop.length };
   } catch (err) {
     await api.storage.local.set({ lastUpdateError: String(err) });
+    diagAppend('rules-fail', { err: String(err) });
     await scheduleRetry().catch(() => {});
     throw err;
   }

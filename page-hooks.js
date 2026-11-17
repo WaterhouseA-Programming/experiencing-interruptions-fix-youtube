@@ -40,7 +40,60 @@
 
   // ---- live settings --------------------------------------------------------
 
+  let fixOn = true;
+  // Options switch so a user can rule this layer out. The hooks below are
+  // installed before storage can be read, so "off" turns them into plain
+  // pass-throughs rather than removing them.
+  let dataLayerOn = true;
   let enabled = true;
+  function refreshEnabled() {
+    enabled = fixOn && dataLayerOn;
+  }
+
+  // Remote kill switch for ad-field pruning (rules "pruneAdKeys": false).
+  let pruneAdKeys = true;
+
+  // Shared with content.js (same content-script global, invisible to the
+  // page): pruning cost per video, read and reset by its load timer.
+  const stats = { prunes: 0, walks: 0, pruneMs: 0 };
+  window.eifPruneStats = stats;
+
+  // content.js defines window.eifDiag after this file runs; look it up late.
+  function diag(e, d) {
+    setTimeout(() => {
+      if (typeof window.eifDiag === 'function') window.eifDiag(e, d);
+    }, 0);
+  }
+
+  // Lower-cased nag phrases, used only to confirm a snackbar is the nag
+  // before deleting it from YouTube's data. Kept in step with content.js.
+  const BUILT_IN_PHRASES = [
+    'experiencing interruptions',
+    'ad blockers are not allowed',
+    'using an ad blocker',
+    'des interruptions',
+    'interrupciones',
+    'unterbrechungen',
+    'interrupções',
+    'interruzioni',
+    'onderbrekingen',
+    'przerwy',
+    'kesinti',
+    'перебои',
+    'перебої',
+    '中断',
+    '중단',
+  ];
+  let phrases = BUILT_IN_PHRASES.slice();
+
+  function mergePhrases(extra) {
+    const clean = Array.isArray(extra)
+      ? extra
+          .filter((t) => typeof t === 'string' && t.trim())
+          .map((t) => t.trim().toLowerCase().replace(/\?$/, ''))
+      : [];
+    phrases = Array.from(new Set(BUILT_IN_PHRASES.concat(clean)));
+  }
 
   // JSON keys that identify an enforcement popup payload.
   const BUILT_IN_POPUP_KEYS = [
@@ -53,7 +106,7 @@
   // Ad-slot fields whose presence lets YouTube schedule ads; when an ad
   // blocker then stops the ad loading, detection fires. Pruned so, from the
   // player's perspective, no ad inventory exists (Brave's json-prune rule).
-  // Remotely extensible via the "adKeys" rule: textNeedsPruning gates every
+  // Remotely extensible via the "adKeys" rule: pruningPlan gates every
   // prune on these names appearing, so a rename by YouTube would otherwise
   // silently disable this whole layer until a new release shipped.
   const BUILT_IN_AD_KEYS = ['adPlacements', 'adSlots', 'playerAds'];
@@ -75,6 +128,7 @@
 
   function applyMinTimeout(v) {
     if (typeof v === 'number' && isFinite(v)) minTimeout = v;
+    if (minTimeout > 0) installTimeoutHook();
   }
 
   // Merge validated remote key names onto the built-ins. Key names only, and a
@@ -93,18 +147,32 @@
       'remoteJsonPopupKeys',
       'remoteAdKeys',
       'remoteMinTimeoutMs',
+      'remotePruneAdKeys',
+      'remotePopupText',
+      'dataLayer',
     ])
     .then((s) => {
-      if (s && typeof s.enabled === 'boolean') enabled = s.enabled;
-      popupKeys = mergeKeys(BUILT_IN_POPUP_KEYS, s && s.remoteJsonPopupKeys);
-      adKeys = mergeKeys(BUILT_IN_AD_KEYS, s && s.remoteAdKeys);
-      if (s) applyMinTimeout(s.remoteMinTimeoutMs);
+      if (!s) return;
+      fixOn = s.enabled !== false;
+      dataLayerOn = s.dataLayer !== false;
+      refreshEnabled();
+      pruneAdKeys = s.remotePruneAdKeys !== false;
+      popupKeys = mergeKeys(BUILT_IN_POPUP_KEYS, s.remoteJsonPopupKeys);
+      adKeys = mergeKeys(BUILT_IN_AD_KEYS, s.remoteAdKeys);
+      mergePhrases(s.remotePopupText);
+      applyMinTimeout(s.remoteMinTimeoutMs);
     })
     .catch(() => {});
 
   api.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
-    if (changes.enabled) enabled = changes.enabled.newValue !== false;
+    if (changes.enabled) fixOn = changes.enabled.newValue !== false;
+    if (changes.dataLayer) dataLayerOn = changes.dataLayer.newValue !== false;
+    refreshEnabled();
+    if (changes.remotePruneAdKeys) {
+      pruneAdKeys = changes.remotePruneAdKeys.newValue !== false;
+    }
+    if (changes.remotePopupText) mergePhrases(changes.remotePopupText.newValue);
     if (changes.remoteJsonPopupKeys) {
       popupKeys = mergeKeys(
         BUILT_IN_POPUP_KEYS,
@@ -121,24 +189,39 @@
 
   // ---- pruning ----------------------------------------------------------------
 
-  // Cheap string gate so the deep walk only runs on responses that can
-  // actually contain something to remove.
-  function textNeedsPruning(text) {
-    if (!enabled || typeof text !== 'string' || text.length < 20) return false;
-    for (const k of adKeys) {
-      if (text.includes('"' + k + '"')) return true;
+  // Cheap string gate. Returns null (nothing to do) or which passes to run:
+  // `ads` deletes a few top-level fields, `walk` searches the whole response.
+  // Every player response carries adPlacements, and walking one through
+  // Firefox's cross-compartment wrappers costs real time inside YouTube's
+  // JSON.parse, so the walk runs only when a popup or snackbar could be in it.
+  function pruningPlan(text) {
+    if (!enabled || typeof text !== 'string' || text.length < 20) return null;
+    let ads = false;
+    if (pruneAdKeys) {
+      for (const k of adKeys) {
+        if (text.includes('"' + k + '"')) {
+          ads = true;
+          break;
+        }
+      }
     }
-    for (const k of popupKeys) {
-      if (text.includes('"' + k + '"')) return true;
+    let walk = false;
+    const hasHelp = text.includes(HELP_LINK);
+    if (text.includes('"openPopupAction"')) {
+      if (hasHelp && text.includes('"' + TOAST_KEY + '"')) walk = true;
+      else {
+        for (const k of popupKeys) {
+          if (text.includes('"' + k + '"')) {
+            walk = true;
+            break;
+          }
+        }
+      }
     }
-    if (
-      (text.includes('"' + TOAST_KEY + '"') ||
-        text.includes('"' + SNACKBAR_KEY + '"')) &&
-      text.includes(HELP_LINK)
-    ) {
-      return true;
+    if (!walk && hasHelp && text.includes('"' + SNACKBAR_KEY + '"')) {
+      walk = true;
     }
-    return false;
+    return ads || walk ? { ads, walk } : null;
   }
 
   // The "Experiencing interruptions?" toast arrives as a generic
@@ -175,18 +258,59 @@
     return false;
   }
 
-  function prune(obj) {
-    if (!enabled || !obj || typeof obj !== 'object') return obj;
-    try {
-      stripAdKeys(obj);
-      if (obj.playerResponse && typeof obj.playerResponse === 'object') {
-        stripAdKeys(obj.playerResponse);
+  // Collects the text of a snackbar (bounded) to confirm it is the nag.
+  function hasNagPhrase(node) {
+    const parts = [];
+    (function collect(n, depth) {
+      if (depth > 12 || !n || parts.length > 200) return;
+      if (typeof n === 'string') {
+        parts.push(n);
+        return;
       }
-      stripPopupActions(obj, 0);
-    } catch (_e) {
+      if (typeof n !== 'object') return;
+      let keys;
+      try {
+        keys = Object.keys(n);
+      } catch (_e) {
+        return;
+      }
+      if (keys.length > 500) return;
+      for (const key of keys) {
+        try {
+          collect(n[key], depth + 1);
+        } catch (_e) {}
+      }
+    })(node, 0);
+    const t = parts.join(' ').toLowerCase();
+    return phrases.some((p) => p && t.includes(p));
+  }
+
+  let pruneErrorLogged = false;
+
+  function prune(obj, plan) {
+    if (!enabled || !plan || !obj || typeof obj !== 'object') return obj;
+    const t0 = performance.now();
+    try {
+      if (plan.ads) {
+        stripAdKeys(obj);
+        if (obj.playerResponse && typeof obj.playerResponse === 'object') {
+          stripAdKeys(obj.playerResponse);
+        }
+      }
+      if (plan.walk) {
+        stats.walks++;
+        stripPopupActions(obj, 0);
+      }
+    } catch (e) {
       // Never break the page: worst case is an unpruned response, which the
       // DOM cleanup in content.js still handles.
+      if (!pruneErrorLogged) {
+        pruneErrorLogged = true;
+        diag('hook-error', { where: 'prune', err: String(e) });
+      }
     }
+    stats.prunes++;
+    stats.pruneMs += performance.now() - t0;
     return obj;
   }
 
@@ -218,13 +342,21 @@
         continue;
       }
       if (!value || typeof value !== 'object') continue;
-      if (
-        (key === 'openPopupAction' && isEnforcementPopup(value)) ||
-        (key === SNACKBAR_KEY && hasHelpLink(value, 0))
-      ) {
+      // A snackbar is deleted only when it carries the help link AND the
+      // nag's wording: other snackbars can link to the help centre too, and
+      // deleting them could leave YouTube with a broken command. A nag
+      // snackbar in a language not listed is still hidden on screen by
+      // content.js.
+      const popupNag = key === 'openPopupAction' && isEnforcementPopup(value);
+      const snackNag =
+        !popupNag &&
+        key === SNACKBAR_KEY &&
+        hasHelpLink(value, 0) &&
+        hasNagPhrase(value);
+      if (popupNag || snackNag) {
         try {
           delete node[key];
-          notifyNagBlocked();
+          notifyNagBlocked(popupNag ? 'json-popup' : 'json-snackbar');
         } catch (_e) {}
         continue;
       }
@@ -237,9 +369,9 @@
   // content.js sets this hook on the content-script global (an Xray expando,
   // invisible to YouTube's scripts) and de-duplicates repeat calls. Deferred
   // so counting never runs inside YouTube's JSON.parse call.
-  function notifyNagBlocked() {
+  function notifyNagBlocked(how) {
     const hook = window.eifNagBlocked;
-    if (typeof hook === 'function') setTimeout(hook, 0);
+    if (typeof hook === 'function') setTimeout(() => hook(how), 0);
   }
 
   function isEnforcementPopup(action) {
@@ -270,10 +402,13 @@
     page.JSON.parse = exportFunction(function (text, reviver) {
       const result =
         reviver === undefined ? origParse(text) : origParse(text, reviver);
-      if (textNeedsPruning(text)) prune(result);
+      const plan = pruningPlan(text);
+      if (plan) prune(result, plan);
       return result;
     }, window);
-  } catch (_e) {}
+  } catch (e) {
+    diag('hook-error', { where: 'JSON.parse', err: String(e) });
+  }
 
   // ---- hook: Response.prototype.json -------------------------------------------
   //
@@ -284,16 +419,22 @@
   try {
     const RespProto = page.Response.prototype;
     const origText = RespProto.text;
+    const origJson = RespProto.json;
     RespProto.json = exportFunction(function () {
+      // With the data layer off, YouTube gets the untouched native parser.
+      if (!enabled) return origJson.call(this);
       return origText.call(this).then(
         exportFunction(function (t) {
           const obj = origParse(t);
-          if (textNeedsPruning(t)) prune(obj);
+          const plan = pruningPlan(t);
+          if (plan) prune(obj, plan);
           return obj;
         }, window)
       );
     }, window);
-  } catch (_e) {}
+  } catch (e) {
+    diag('hook-error', { where: 'Response.json', err: String(e) });
+  }
 
   // ---- hook: setTimeout (anti-stall) ------------------------------------------
   //
@@ -345,16 +486,27 @@
   }
   window.addEventListener('yt-navigate-finish', resetSquashBudget, true);
 
-  try {
-    const origSetTimeout = page.setTimeout;
-    page.setTimeout = exportFunction(function (fn, delay) {
-      const d = shouldSquash(delay) ? 0 : delay;
-      if (arguments.length <= 2) return origSetTimeout(fn, d);
-      // Preserve any extra timer arguments YouTube may pass through.
-      const rest = Array.prototype.slice.call(arguments, 2);
-      return origSetTimeout(fn, d, ...rest);
-    }, window);
-  } catch (_e) {}
+  // Installed only when the remote rule switches squashing on. Until 1.10.0
+  // it wrapped every timer YouTube set even with squashing off: overhead on
+  // every call, and a patched setTimeout YouTube could notice.
+  let timeoutHookInstalled = false;
+
+  function installTimeoutHook() {
+    if (timeoutHookInstalled) return;
+    timeoutHookInstalled = true;
+    try {
+      const origSetTimeout = page.setTimeout;
+      page.setTimeout = exportFunction(function (fn, delay) {
+        const d = shouldSquash(delay) ? 0 : delay;
+        if (arguments.length <= 2) return origSetTimeout(fn, d);
+        // Preserve any extra timer arguments YouTube may pass through.
+        const rest = Array.prototype.slice.call(arguments, 2);
+        return origSetTimeout(fn, d, ...rest);
+      }, window);
+    } catch (e) {
+      diag('hook-error', { where: 'setTimeout', err: String(e) });
+    }
+  }
 
   // ---- pin the popup config -----------------------------------------------------
   //

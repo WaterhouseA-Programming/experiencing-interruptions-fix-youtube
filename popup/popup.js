@@ -156,6 +156,41 @@ document.getElementById('report').addEventListener('click', async () => {
   pendingIssueUrl = url;
 });
 
+// Diagnostic log: kept on this device by background.js, copied as text only
+// when the user clicks. The extension never sends it anywhere.
+document.getElementById('diag-copy').addEventListener('click', async () => {
+  let text = '';
+  try {
+    const res = await api.runtime.sendMessage({ type: 'get-diag' });
+    text = (res && res.text) || '';
+  } catch (_e) {}
+  if (!text) {
+    say('Could not read the diagnostic log.');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    say(
+      'Diagnostic log copied. Paste it wherever you are getting help. It ' +
+        'has no web addresses or video IDs in it.'
+    );
+    return;
+  } catch (_e) {}
+  say('Copy this log by hand:');
+  reportText.value = text;
+  reportText.hidden = false;
+  reportText.select();
+});
+
+document.getElementById('diag-clear').addEventListener('click', async () => {
+  try {
+    await api.runtime.sendMessage({ type: 'clear-diag' });
+    say('Diagnostic log cleared.');
+  } catch (_e) {
+    say('Could not clear the diagnostic log.');
+  }
+});
+
 enabledEl.addEventListener('change', () =>
   api.storage.local.set({ enabled: enabledEl.checked })
 );
