@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.10.1
+
+- Keyboard media keys and the Windows media overlay now count as you.
+  Before, a pause from a media key right after the add-on cleared a popup
+  looked like YouTube's forced pause, and the add-on started the video
+  again. It now sees YouTube's play/pause handler run and leaves the video
+  paused.
+- The Windows media overlay names the video that is playing. YouTube could
+  leave the title of an earlier video, an ad or a hover preview there, so
+  the overlay named a video that wasn't playing. While the main video
+  plays, the add-on now sets the title, channel and thumbnail to match it.
+
 ## 1.10.0
 
 Reliability release.

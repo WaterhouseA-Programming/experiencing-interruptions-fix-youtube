@@ -392,8 +392,11 @@
     document.addEventListener(t, noteUserInput, true)
   );
 
+  // Media keys and the OS media overlay don't fire page input events;
+  // page-hooks.js records when YouTube's media-session handler ran.
   function userJustActed() {
-    return Date.now() - lastUserInputAt < USER_PAUSE_MS;
+    const last = Math.max(lastUserInputAt, window.eifMediaKeyAt || 0);
+    return Date.now() - last < USER_PAUSE_MS;
   }
 
   function resumePlayback() {
@@ -456,6 +459,55 @@
     },
     true
   );
+
+  // ---- media overlay title ------------------------------------------------
+  //
+  // YouTube can leave the media-session title of an earlier video, an ad or a
+  // hover preview in place, so the Windows media overlay names a video that
+  // isn't playing. While the main video plays, make the title match it.
+
+  function syncMediaTitle() {
+    if (!enabled || pageType() !== 'watch') return;
+    const video = mainVideo();
+    const player = moviePlayer();
+    if (!video || video.paused || !player) return;
+    if (player.classList.contains('ad-showing')) return;
+    try {
+      const ms = navigator.mediaSession;
+      if (!ms || typeof MediaMetadata !== 'function') return;
+      const p = player.wrappedJSObject || player;
+      if (typeof p.getVideoData !== 'function') return;
+      const data = p.getVideoData();
+      const title = data && typeof data.title === 'string' ? data.title : '';
+      if (!title) return;
+      const cur = ms.metadata;
+      if (cur && cur.title === title) return;
+      const id = typeof data.video_id === 'string' ? data.video_id : '';
+      ms.metadata = new MediaMetadata({
+        title,
+        artist: typeof data.author === 'string' ? data.author : '',
+        artwork: /^[\w-]{11}$/.test(id)
+          ? [
+              {
+                src: 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg',
+                sizes: '480x360',
+                type: 'image/jpeg',
+              },
+            ]
+          : [],
+      });
+      diag('media-title-fixed', {});
+    } catch (_e) {}
+  }
+
+  document.addEventListener(
+    'playing',
+    (e) => {
+      if (isMainVideo(e.target)) setTimeout(syncMediaTitle, 1000);
+    },
+    true
+  );
+  setInterval(syncMediaTitle, 5000);
 
   // ---- observer -----------------------------------------------------------
 

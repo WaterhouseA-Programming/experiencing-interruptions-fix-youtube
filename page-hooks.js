@@ -527,4 +527,37 @@
 
   pinPopupConfig();
   setInterval(pinPopupConfig, 1000);
+
+  // ---- media keys ---------------------------------------------------------------
+  //
+  // Keyboard media keys and the Windows/OS media overlay reach YouTube through
+  // navigator.mediaSession action handlers, not as clicks or key presses in
+  // the page. content.js treats a pause with no recent page input as one
+  // YouTube forced and undoes it while it is clearing a popup, so a media-key
+  // pause could be reversed. Wrapping YouTube's play/pause/stop handlers
+  // records when one ran; content.js reads eifMediaKeyAt (a content-script
+  // global, invisible to the page) and counts that pause as the user's.
+  const MEDIA_KEY_ACTIONS = ['play', 'pause', 'stop'];
+
+  try {
+    const MSProto = page.MediaSession && page.MediaSession.prototype;
+    const origSetHandler = MSProto && MSProto.setActionHandler;
+    if (typeof origSetHandler === 'function') {
+      MSProto.setActionHandler = exportFunction(function (action, handler) {
+        let h = handler;
+        if (
+          typeof handler === 'function' &&
+          MEDIA_KEY_ACTIONS.includes(String(action))
+        ) {
+          h = exportFunction(function (details) {
+            window.eifMediaKeyAt = Date.now();
+            return handler.call(this, details);
+          }, window);
+        }
+        return origSetHandler.call(this, action, h);
+      }, window);
+    }
+  } catch (e) {
+    diag('hook-error', { where: 'mediaSession', err: String(e) });
+  }
 })();
