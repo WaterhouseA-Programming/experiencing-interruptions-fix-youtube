@@ -280,6 +280,7 @@
       removedSomething = true;
       if (!lastRemovalHow) lastRemovalHow = 'snackbar';
     }
+    syncGhostHosts();
 
     // Remove the dark backdrop, but only alongside an enforcement popup.
     // Backdrops also sit behind ordinary dialogs (Share, Save to playlist,
@@ -322,6 +323,7 @@
     let removed = false;
     querySafe('yt-notification-action-renderer').forEach((el) => {
       if (hasEnforcementText(el)) {
+        markGhostHost(el);
         el.remove();
         removed = true;
       }
@@ -344,16 +346,70 @@
     querySafe(SNACKBAR_SELECTOR).forEach((el) => {
       const marked = el.hasAttribute(SNACKBAR_HIDDEN_ATTR);
       if (hasEnforcementText(el)) {
+        markGhostHost(el);
         if (marked) return;
         el.setAttribute(SNACKBAR_HIDDEN_ATTR, '');
         el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('pointer-events', 'none', 'important');
         hidden = true;
       } else if (marked) {
         el.removeAttribute(SNACKBAR_HIDDEN_ATTR);
         el.style.removeProperty('display');
+        el.style.removeProperty('pointer-events');
       }
     });
     return hidden;
+  }
+
+  // ---- ghost toast hosts --------------------------------------------------
+  //
+  // Removing the nag's renderer (or hiding its snackbar) left the container
+  // it sat in on screen: tp-yt-paper-toast stays "opened" and snackbar-
+  // container keeps its fixed box at the bottom left. Both are invisible but
+  // still take clicks, so the player's play and volume controls under them
+  // stopped working. A host that held a nag is now closed and made
+  // click-through until YouTube puts something else in it.
+
+  const GHOST_HOSTS = 'tp-yt-paper-toast, snackbar-container';
+  const GHOST_ATTR = 'data-eif-ghost';
+
+  function markGhostHost(el) {
+    const host = el.closest && el.closest(GHOST_HOSTS);
+    if (host) host.setAttribute(GHOST_ATTR, '');
+  }
+
+  // Does the host show anything other than the (removed or hidden) nag?
+  function hostHasOtherContent(host) {
+    if (host.matches('snackbar-container')) {
+      return Array.from(host.querySelectorAll(SNACKBAR_SELECTOR)).some(
+        (s) => !s.hasAttribute(SNACKBAR_HIDDEN_ATTR)
+      );
+    }
+    const t = (host.textContent || '').trim().toLowerCase();
+    if (!t) return false;
+    return !textPhrases.some((p) => p && t.includes(p));
+  }
+
+  function syncGhostHosts() {
+    querySafe('[' + GHOST_ATTR + ']').forEach((host) => {
+      if (hostHasOtherContent(host)) {
+        host.removeAttribute(GHOST_ATTR);
+        host.style.removeProperty('display');
+        host.style.removeProperty('pointer-events');
+        return;
+      }
+      if (host.style.getPropertyValue('pointer-events') === 'none') return;
+      host.style.setProperty('pointer-events', 'none', 'important');
+      if (host.matches('tp-yt-paper-toast')) {
+        // Close it through Polymer so YouTube's own state agrees, then hide
+        // it; YouTube clears the inline display when it opens the next toast.
+        try {
+          const w = host.wrappedJSObject || host;
+          if (typeof w.close === 'function') w.close();
+        } catch (_e) {}
+        host.style.setProperty('display', 'none', 'important');
+      }
+    });
   }
 
   // querySelectorAll that never throws on a bad remote selector.

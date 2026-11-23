@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.10.2
+
+- The hidden "Experiencing interruptions?" toast no longer blocks the
+  player's controls. Removing the nag left its empty toast box on screen at
+  the bottom left, invisible but still catching clicks, so play, pause and
+  volume under it did nothing. That box is now closed and made
+  click-through, and comes back as normal for YouTube's ordinary toasts.
+
 ## 1.10.1
 
 - Keyboard media keys and the Windows media overlay now count as you.
